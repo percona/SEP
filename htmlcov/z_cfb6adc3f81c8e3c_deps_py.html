@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_cfb6adc3f81c8e3c_main_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -120,7 +120,7 @@
     <p class="run"><span class="n"><a id="t36" href="#t36">36</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">settings</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t37" href="#t37">37</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">log</span> <span class="key">import</span> <span class="nam">set_log_context</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t38" href="#t38">38</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">security</span> <span class="key">import</span> <span class="nam">is_bearer_authenticated</span><span class="op">,</span> <span class="nam">SAFE_HTTP_METHODS</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">sep</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">sep_settings</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t39" href="#t39">39</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">extensions</span><span class="op">.</span><span class="nam">config</span> <span class="key">import</span> <span class="nam">extensions_settings</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t40" href="#t40">40</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t41" href="#t41">41</a></span><span class="t"><span class="nam">logger</span> <span class="op">=</span> <span class="nam">logging</span><span class="op">.</span><span class="nam">getLogger</span><span class="op">(</span><span class="nam">__name__</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t42" href="#t42">42</a></span><span class="t"><span class="com">#: The provider-selected concrete user class, resolved from configuration at</span>&nbsp;</span><span class="r"></span></p>
@@ -134,14 +134,14 @@
     <p class="run"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="nam">AuthToken</span> <span class="op">=</span> <span class="nam">Annotated</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Depends</span><span class="op">(</span><span class="nam">oauth2_scheme</span><span class="op">)</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t"><span class="nam">RefreshTokenCookie</span> <span class="op">=</span> <span class="nam">Annotated</span><span class="op">[</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">    <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Cookie</span><span class="op">(</span><span class="nam">alias</span><span class="op">=</span><span class="nam">sep_settings</span><span class="op">.</span><span class="nam">SESSION_REFRESH</span><span class="op">.</span><span class="nam">COOKIE_NAME</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t">    <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">,</span> <span class="nam">Cookie</span><span class="op">(</span><span class="nam">alias</span><span class="op">=</span><span class="nam">extensions_settings</span><span class="op">.</span><span class="nam">SESSION_REFRESH</span><span class="op">.</span><span class="nam">COOKIE_NAME</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t"><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t"><span class="nam">SERVICE_PRINCIPAL_ID</span> <span class="op">=</span> <span class="nam">UUID</span><span class="op">(</span><span class="str">&quot;00000000-0000-4000-8000-000000000000&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t"><span class="nam">SERVICE_PRINCIPAL</span> <span class="op">=</span> <span class="nam">User</span><span class="op">.</span><span class="nam">build_service_principal</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t">    <span class="nam">user_id</span><span class="op">=</span><span class="nam">SERVICE_PRINCIPAL_ID</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">    <span class="nam">username</span><span class="op">=</span><span class="str">&quot;sep-service&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">    <span class="nam">first_name</span><span class="op">=</span><span class="str">&quot;SEP&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t59" href="#t59">59</a></span><span class="t">    <span class="nam">username</span><span class="op">=</span><span class="str">&quot;extensions-service&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t60" href="#t60">60</a></span><span class="t">    <span class="nam">first_name</span><span class="op">=</span><span class="str">&quot;PMM Extensions&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t61" href="#t61">61</a></span><span class="t">    <span class="nam">last_name</span><span class="op">=</span><span class="str">&quot;Service&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t62" href="#t62">62</a></span><span class="t">    <span class="nam">role</span><span class="op">=</span><span class="nam">UserRole</span><span class="op">.</span><span class="nam">VIEWER</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t63" href="#t63">63</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
@@ -168,7 +168,7 @@
     <p class="pln"><span class="n"><a id="t84" href="#t84">84</a></span><span class="t"><span class="str">    When ``settings.EXTENSIONS_INTERNAL_TOKEN`` is configured and the incoming Bearer</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t85" href="#t85">85</a></span><span class="t"><span class="str">    token matches it (constant-time comparison), return a synthetic non-admin</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t"><span class="str">    &quot;service principal&quot; user instead of contacting the OAuth provider. This</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t"><span class="str">    allows SEP-internal service-to-service calls (e.g. scheduled inventory</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t"><span class="str">    allows PMM Extensions internal service-to-service calls (e.g. scheduled inventory</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t"><span class="str">    sync) to authenticate with a stable deployment-level secret rather than a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t"><span class="str">    short-lived personal access token.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -319,7 +319,7 @@
     <p class="pln"><span class="n"><a id="t235" href="#t235">235</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Return the minimum role a matched route requires.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t236" href="#t236">236</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t237" href="#t237">237</a></span><span class="t"><span class="str">    The single home of the unregistered-route default, read by the gate and by</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t"><span class="str">    the test that classifies SEP&#x27;s unsafe surface, so the two cannot disagree</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t"><span class="str">    the test that classifies PMM Extensions&#x27; unsafe surface, so the two cannot disagree</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t239" href="#t239">239</a></span><span class="t"><span class="str">    about what an unregistered route resolves to. A request no route matched</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t240" href="#t240">240</a></span><span class="t"><span class="str">    carries no ``route`` in its scope and resolves the same way.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -422,7 +422,7 @@
             <a class="nav" href="z_cfb6adc3f81c8e3c_main_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

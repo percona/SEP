@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_96aaad578eaa8dbf_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -357,7 +357,7 @@
     <p class="pln"><span class="n"><a id="t273" href="#t273">273</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t274" href="#t274">274</a></span><span class="t">    <span class="op">@</span><span class="nam">alru_cache</span><span class="op">(</span><span class="nam">ttl</span><span class="op">=</span><span class="num">300</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t275" href="#t275">275</a></span><span class="t">    <span class="key">async</span> <span class="key">def</span> <span class="nam">get_service_accounts</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">list</span><span class="op">[</span><span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t276" href="#t276">276</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Read every service account in SEP&#x27;s org via the service-account token.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t276" href="#t276">276</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Read every service account in PMM Extensions&#x27; org via the service-account token.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t277" href="#t277">277</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t278" href="#t278">278</a></span><span class="t"><span class="str">        Pages are read until the collected rows reach the listing&#x27;s</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t279" href="#t279">279</a></span><span class="t"><span class="str">        ``totalCount`` or a page comes back empty. Only the pagination fields</span>&nbsp;</span><span class="r"></span></p>
@@ -411,7 +411,7 @@
     <p class="run"><span class="n"><a id="t327" href="#t327">327</a></span><span class="t">    <span class="key">async</span> <span class="key">def</span> <span class="nam">verify_service_account_token</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t328" href="#t328">328</a></span><span class="t">        <span class="nam">self</span><span class="op">,</span> <span class="nam">token</span><span class="op">:</span> <span class="nam">str</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t329" href="#t329">329</a></span><span class="t">    <span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">GrafanaServiceAccountRecord</span> <span class="op">|</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t330" href="#t330">330</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Verify a Grafana service-account token presented to SEP.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t330" href="#t330">330</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Verify a Grafana service-account token presented to PMM Extensions.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t331" href="#t331">331</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t332" href="#t332">332</a></span><span class="t"><span class="str">        A verdict (the account record, or a refusal Grafana itself answered)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t333" href="#t333">333</a></span><span class="t"><span class="str">        is reused for ``service_account_bearer_revocation_window``, keyed on the</span>&nbsp;</span><span class="r"></span></p>
@@ -423,9 +423,9 @@
     <p class="pln"><span class="n"><a id="t339" href="#t339">339</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t340" href="#t340">340</a></span><span class="t"><span class="str">        :param token: The ``glsa_`` token the caller presented.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t341" href="#t341">341</a></span><span class="t"><span class="str">        :return: The ``/api/serviceaccounts/{id}`` record, or ``None`` when</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t342" href="#t342">342</a></span><span class="t"><span class="str">            Grafana rejected the token or the account is not in SEP&#x27;s org.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t342" href="#t342">342</a></span><span class="t"><span class="str">            Grafana rejected the token or the account is not in PMM Extensions&#x27; org.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t343" href="#t343">343</a></span><span class="t"><span class="str">        :raises GrafanaException: If Grafana could not decide: unreachable,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t344" href="#t344">344</a></span><span class="t"><span class="str">            slow, erroring, refusing SEP&#x27;s own credential, or answering off</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t344" href="#t344">344</a></span><span class="t"><span class="str">            slow, erroring, refusing PMM Extensions&#x27; own credential, or answering off</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t345" href="#t345">345</a></span><span class="t"><span class="str">            contract.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t346" href="#t346">346</a></span><span class="t"><span class="str">        &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t347" href="#t347">347</a></span><span class="t">        <span class="nam">cache</span> <span class="op">=</span> <span class="nam">self</span><span class="op">.</span><span class="nam">_service_account_verdicts</span>&nbsp;</span><span class="r"></span></p>
@@ -446,7 +446,7 @@
     <p class="pln"><span class="n"><a id="t362" href="#t362">362</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t363" href="#t363">363</a></span><span class="t"><span class="str">        ``/api/user`` proves the token and names the account in ``uid``, but it</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t364" href="#t364">364</a></span><span class="t"><span class="str">        reports every service account as enabled, so role and disabled flag are</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t"><span class="str">        read from the account record through SEP&#x27;s own credential. That call is</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t"><span class="str">        read from the account record through PMM Extensions&#x27; own credential. That call is</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t366" href="#t366">366</a></span><span class="t"><span class="str">        org-scoped by Grafana, so a 404 covers an account in another org as well</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t367" href="#t367">367</a></span><span class="t"><span class="str">        as one deleted in between.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t368" href="#t368">368</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -543,7 +543,7 @@
             <a class="nav" href="z_96aaad578eaa8dbf_utils_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

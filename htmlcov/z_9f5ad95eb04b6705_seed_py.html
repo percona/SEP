@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_6f83b30fdb6a6182_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -191,7 +191,7 @@
     <p class="pln"><span class="n"><a id="t107" href="#t107">107</a></span><span class="t"><span class="com">#: effective interpreter to, and the artifact specs&#x27; ``run-script`` steps launch</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t108" href="#t108">108</a></span><span class="t"><span class="com">#: from. Mirrors the existing ``${NOMAD_ALLOC_DIR}/venv`` handoff between</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t109" href="#t109">109</a></span><span class="t"><span class="com">#: ``prepare-env`` and ``run-script``.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t"><span class="nam">EFFECTIVE_INTERPRETER_PATH</span> <span class="op">=</span> <span class="str">&quot;${NOMAD_ALLOC_DIR}/sep_interpreter&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t110" href="#t110">110</a></span><span class="t"><span class="nam">EFFECTIVE_INTERPRETER_PATH</span> <span class="op">=</span> <span class="str">&quot;${NOMAD_ALLOC_DIR}/pmm_extensions_interpreter&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t111" href="#t111">111</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t112" href="#t112">112</a></span><span class="t"><span class="com">#: ``sudo`` options that consume the following token as their value. Walking</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t113" href="#t113">113</a></span><span class="t"><span class="com">#: past them is what keeps ``sudo -u postgres &lt;cmd&gt;`` resolving ``&lt;cmd&gt;`` rather</span>&nbsp;</span><span class="r"></span></p>
@@ -442,8 +442,8 @@
     <p class="pln"><span class="n"><a id="t358" href="#t358">358</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t359" href="#t359">359</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t360" href="#t360">360</a></span><span class="t"><span class="com">#: POSIX sh body of the log-capture hold: keep the allocation non-terminal after</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t361" href="#t361">361</a></span><span class="t"><span class="com">#: the payload exits so Nomad cannot garbage-collect logs SEP has not read yet,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t362" href="#t362">362</a></span><span class="t"><span class="com">#: until either SEP signals the step or the deadline elapses.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t361" href="#t361">361</a></span><span class="t"><span class="com">#: the payload exits so Nomad cannot garbage-collect logs PMM Extensions has not read yet,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t362" href="#t362">362</a></span><span class="t"><span class="com">#: until either PMM Extensions signals the step or the deadline elapses.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t363" href="#t363">363</a></span><span class="t"><span class="com">#:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t364" href="#t364">364</a></span><span class="t"><span class="com">#: ``sleep`` is backgrounded and waited on because a POSIX shell runs traps only</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t365" href="#t365">365</a></span><span class="t"><span class="com">#: between foreground commands -- ``trap ...; sleep N`` would ignore the signal</span>&nbsp;</span><span class="r"></span></p>
@@ -873,7 +873,7 @@
     <p class="run run2"><span class="n"><a id="t789" href="#t789">789</a></span><span class="t">    <span class="nam">Task</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t790" href="#t790">790</a></span><span class="t">        <span class="nam">name</span><span class="op">=</span><span class="nam">INVENTORY_SYNC_TASK_NAME</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t791" href="#t791">791</a></span><span class="t">        <span class="nam">data</span><span class="op">=</span><span class="op">{</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t792" href="#t792">792</a></span><span class="t">            <span class="str">&quot;callable&quot;</span><span class="op">:</span> <span class="str">&quot;app.sep.apps.inventory.sync.run_scheduled_inventory_sync&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t792" href="#t792">792</a></span><span class="t">            <span class="str">&quot;callable&quot;</span><span class="op">:</span> <span class="str">&quot;app.extensions.apps.inventory.sync.run_scheduled_inventory_sync&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t793" href="#t793">793</a></span><span class="t">            <span class="str">&quot;target&quot;</span><span class="op">:</span> <span class="str">&quot;local&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t794" href="#t794">794</a></span><span class="t">        <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t795" href="#t795">795</a></span><span class="t">        <span class="nam">backend</span><span class="op">=</span><span class="nam">TaskBackendEnum</span><span class="op">.</span><span class="nam">CELERY</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -884,7 +884,7 @@
     <p class="run run2"><span class="n"><a id="t800" href="#t800">800</a></span><span class="t">        <span class="nam">name</span><span class="op">=</span><span class="nam">INVENTORY_COLLECTION_TASK_NAME</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t801" href="#t801">801</a></span><span class="t">        <span class="nam">data</span><span class="op">=</span><span class="op">{</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t802" href="#t802">802</a></span><span class="t">            <span class="str">&quot;callable&quot;</span><span class="op">:</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t803" href="#t803">803</a></span><span class="t">                <span class="str">&quot;app.sep.apps.inventory.collection.run_scheduled_inventory_collection&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t803" href="#t803">803</a></span><span class="t">                <span class="str">&quot;app.extensions.apps.inventory.collection.run_scheduled_inventory_collection&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t804" href="#t804">804</a></span><span class="t">            <span class="op">)</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t805" href="#t805">805</a></span><span class="t">            <span class="str">&quot;target&quot;</span><span class="op">:</span> <span class="str">&quot;local&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t806" href="#t806">806</a></span><span class="t">        <span class="op">}</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
@@ -970,7 +970,7 @@
     <p class="pln"><span class="n"><a id="t886" href="#t886">886</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t887" href="#t887">887</a></span><span class="t"><span class="str">    ``inventory-sync`` is a ``Task`` row rather than a Celery function, so the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t888" href="#t888">888</a></span><span class="t"><span class="str">    entry uses the same indirection an operator-created schedule uses: it points</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t889" href="#t889">889</a></span><span class="t"><span class="str">    at ``execute_task_by_name`` and names the SEP task in ``kwargs``. Only that</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t889" href="#t889">889</a></span><span class="t"><span class="str">    at ``execute_task_by_name`` and names the PMM Extensions task in ``kwargs``. Only that</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t890" href="#t890">890</a></span><span class="t"><span class="str">    shape appears in the sync UI&#x27;s schedule list and produces the ``TaskHistory``</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t891" href="#t891">891</a></span><span class="t"><span class="str">    rows the sync-health rollup reads.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t892" href="#t892">892</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -1283,7 +1283,7 @@
             <a class="nav" href="z_6f83b30fdb6a6182_deps_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

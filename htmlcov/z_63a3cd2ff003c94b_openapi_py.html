@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_63a3cd2ff003c94b_path_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -170,12 +170,12 @@
     <p class="run"><span class="n"><a id="t86" href="#t86">86</a></span><span class="t">            <span class="nam">rewrite_schema_refs</span><span class="op">(</span><span class="nam">item</span><span class="op">,</span> <span class="nam">rename_map</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t87" href="#t87">87</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t88" href="#t88">88</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t"><span class="nam">_APP_MODEL_PREFIX</span> <span class="op">=</span> <span class="str">&quot;app__sep__apps__&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t89" href="#t89">89</a></span><span class="t"><span class="nam">_APP_MODEL_PREFIX</span> <span class="op">=</span> <span class="str">&quot;app__extensions__apps__&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t90" href="#t90">90</a></span><span class="t"><span class="nam">_MODELS_SEP</span> <span class="op">=</span> <span class="str">&quot;__models__&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t91" href="#t91">91</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t92" href="#t92">92</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t93" href="#t93">93</a></span><span class="t"><span class="key">def</span> <span class="nam">_split_app_model</span><span class="op">(</span><span class="nam">key</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">tuple</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">str</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Split an ``app__sep__apps__&lt;app&gt;[__&lt;sub&gt;]__models__&lt;Class&gt;`` schema key.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t94" href="#t94">94</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Split an ``app__extensions__apps__&lt;app&gt;[__&lt;sub&gt;]__models__&lt;Class&gt;`` schema key.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t95" href="#t95">95</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t96" href="#t96">96</a></span><span class="t"><span class="str">    :param key: A module-path-qualified app-model schema name.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t97" href="#t97">97</a></span><span class="t"><span class="str">    :return: The top-level app token and the class-name portion.</span>&nbsp;</span><span class="r"></span></p>
@@ -232,7 +232,7 @@
     <p class="pln"><span class="n"><a id="t148" href="#t148">148</a></span><span class="t"><span class="str">    colliding ``PaginatedResponse[...]`` variants get distinct, positional-</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t149" href="#t149">149</a></span><span class="t"><span class="str">    suffix-free names. Handles both the ``&lt;app&gt;__&lt;Class&gt;`` form emitted by the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t150" href="#t150">150</a></span><span class="t"><span class="str">    :class:`_AppNamespacedJsonSchema` generator and the raw</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t151" href="#t151">151</a></span><span class="t"><span class="str">    ``app__sep__apps__&#8230;__models__&lt;Class&gt;`` module-path form (a generator</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t151" href="#t151">151</a></span><span class="t"><span class="str">    ``app__extensions__apps__&#8230;__models__&lt;Class&gt;`` module-path form (a generator</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t152" href="#t152">152</a></span><span class="t"><span class="str">    fallback). A bare, non-app inner (e.g. a core model) yields ``None``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t153" href="#t153">153</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t154" href="#t154">154</a></span><span class="t"><span class="str">    :param inner: The wrapped model&#x27;s schema name (the wrapper&#x27;s inner ref).</span>&nbsp;</span><span class="r"></span></p>
@@ -254,7 +254,7 @@
     <p class="pln"><span class="n"><a id="t170" href="#t170">170</a></span><span class="t"><span class="str">    models themselves are namespaced upstream by :class:`_AppNamespacedJsonSchema`;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t171" href="#t171">171</a></span><span class="t"><span class="str">    this pass primarily renames generic wrappers (whose names Pydantic still</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t172" href="#t172">172</a></span><span class="t"><span class="str">    emits with positional ``___N`` suffixes) and defensively covers any raw</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t"><span class="str">    ``app__sep__apps__&#8230;`` key the generator left behind.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t173" href="#t173">173</a></span><span class="t"><span class="str">    ``app__extensions__apps__&#8230;`` key the generator left behind.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t174" href="#t174">174</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t175" href="#t175">175</a></span><span class="t"><span class="str">    :param key: A ``components.schemas`` key from the generated spec.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t176" href="#t176">176</a></span><span class="t"><span class="str">    :param schemas: The full schema map, used to resolve generic-wrapper inners.</span>&nbsp;</span><span class="r"></span></p>
@@ -294,7 +294,7 @@
     <p class="pln"><span class="n"><a id="t210" href="#t210">210</a></span><span class="t"><span class="str">    Pydantic v2 falls back to module-path-qualified ``$defs`` names when two app</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t211" href="#t211">211</a></span><span class="t"><span class="str">    models share a class name (for example ``BackupTaskResponse`` in both the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t212" href="#t212">212</a></span><span class="t"><span class="str">    backup_mongo and backup_pg apps), producing</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t213" href="#t213">213</a></span><span class="t"><span class="str">    ``app__sep__apps__backup_pg__models__BackupTaskResponse``. Those names leak</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t213" href="#t213">213</a></span><span class="t"><span class="str">    ``app__extensions__apps__backup_pg__models__BackupTaskResponse``. Those names leak</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t214" href="#t214">214</a></span><span class="t"><span class="str">    the internal module path and &#8212; because Pydantic qualifies every member of a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t215" href="#t215">215</a></span><span class="t"><span class="str">    collision group &#8212; are keyed off the module of each model, not off which app</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t216" href="#t216">216</a></span><span class="t"><span class="str">    &quot;won&quot; a short name. This pass rewrites them to explicit ``&lt;app&gt;__&lt;Class&gt;``</span>&nbsp;</span><span class="r"></span></p>
@@ -344,15 +344,15 @@
     <p class="run"><span class="n"><a id="t260" href="#t260">260</a></span><span class="t">    <span class="key">return</span> <span class="nam">result</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t261" href="#t261">261</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t262" href="#t262">262</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t263" href="#t263">263</a></span><span class="t"><span class="nam">_APP_CORE_REF_PREFIX</span> <span class="op">=</span> <span class="str">&quot;app.sep.apps.&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t263" href="#t263">263</a></span><span class="t"><span class="nam">_APP_CORE_REF_PREFIX</span> <span class="op">=</span> <span class="str">&quot;app.extensions.apps.&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t264" href="#t264">264</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t265" href="#t265">265</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t266" href="#t266">266</a></span><span class="t"><span class="key">def</span> <span class="nam">_strip_core_ref_ids</span><span class="op">(</span><span class="nam">core_ref</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">str</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t267" href="#t267">267</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Return a Pydantic ``core_ref`` with the ``:id`` object suffixes removed.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t268" href="#t268">268</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t269" href="#t269">269</a></span><span class="t"><span class="str">    Mirrors the component-splitting Pydantic itself uses so generic arguments</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t270" href="#t270">270</a></span><span class="t"><span class="str">    (bracketed) are handled: ``app.sep.apps.backup_pg.models.Foo:140[Bar:99]``</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t271" href="#t271">271</a></span><span class="t"><span class="str">    becomes ``app.sep.apps.backup_pg.models.Foo[Bar]``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t270" href="#t270">270</a></span><span class="t"><span class="str">    (bracketed) are handled: ``app.extensions.apps.backup_pg.models.Foo:140[Bar:99]``</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t271" href="#t271">271</a></span><span class="t"><span class="str">    becomes ``app.extensions.apps.backup_pg.models.Foo[Bar]``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t272" href="#t272">272</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t273" href="#t273">273</a></span><span class="t"><span class="str">    :param core_ref: A Pydantic core-schema reference string.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t274" href="#t274">274</a></span><span class="t"><span class="str">    :return: The reference with per-component object ids stripped.</span>&nbsp;</span><span class="r"></span></p>
@@ -364,7 +364,7 @@
     <p class="run"><span class="n"><a id="t280" href="#t280">280</a></span><span class="t"><span class="key">def</span> <span class="nam">_app_namespaced_defs_name</span><span class="op">(</span><span class="nam">core_ref_no_id</span><span class="op">:</span> <span class="nam">str</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t281" href="#t281">281</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Return the ``&lt;app&gt;__&lt;Class&gt;`` defs name for an app-owned model, or ``None``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t282" href="#t282">282</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t283" href="#t283">283</a></span><span class="t"><span class="str">    Derives the app token from the top package under ``app.sep.apps.`` and the</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t283" href="#t283">283</a></span><span class="t"><span class="str">    Derives the app token from the top package under ``app.extensions.apps.`` and the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t284" href="#t284">284</a></span><span class="t"><span class="str">    class from the trailing qualname segment, so the name depends only on the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t285" href="#t285">285</a></span><span class="t"><span class="str">    model&#x27;s own module path &#8212; stable regardless of which other apps are</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t286" href="#t286">286</a></span><span class="t"><span class="str">    installed. Generic instantiations (bracketed) return ``None``: they are</span>&nbsp;</span><span class="r"></span></p>
@@ -386,7 +386,7 @@
     <p class="pln"><span class="n"><a id="t302" href="#t302">302</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t303" href="#t303">303</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t304" href="#t304">304</a></span><span class="t"><span class="key">class</span> <span class="nam">_AppNamespacedJsonSchema</span><span class="op">(</span><span class="nam">GenerateJsonSchema</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t305" href="#t305">305</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Emit ``&lt;app&gt;__&lt;Class&gt;`` ``$defs`` names for every ``app.sep.apps`` model.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t305" href="#t305">305</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Emit ``&lt;app&gt;__&lt;Class&gt;`` ``$defs`` names for every ``app.extensions.apps`` model.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t306" href="#t306">306</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t307" href="#t307">307</a></span><span class="t"><span class="str">    Subclasses FastAPI&#x27;s ``GenerateJsonSchema`` (not Pydantic&#x27;s) so FastAPI&#x27;s own</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t308" href="#t308">308</a></span><span class="t"><span class="str">    overrides &#8212; notably ``bytes_schema`` emitting ``contentMediaType`` &#8212; are</span>&nbsp;</span><span class="r"></span></p>
@@ -690,7 +690,7 @@
     <p class="run run2"><span class="n"><a id="t606" href="#t606">606</a></span><span class="t">    <span class="nam">primary</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t607" href="#t607">607</a></span><span class="t">    <span class="nam">secondary</span><span class="op">:</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t608" href="#t608">608</a></span><span class="t">    <span class="op">*</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t609" href="#t609">609</a></span><span class="t">    <span class="nam">secondary_suffix</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">&quot;_sep&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t609" href="#t609">609</a></span><span class="t">    <span class="nam">secondary_suffix</span><span class="op">:</span> <span class="nam">str</span> <span class="op">=</span> <span class="str">&quot;_extensions&quot;</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t610" href="#t610">610</a></span><span class="t"><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t611" href="#t611">611</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Merge two OpenAPI documents into one, primary winning on conflicts.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t612" href="#t612">612</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -722,7 +722,7 @@
     <p class="pln"><span class="n"><a id="t638" href="#t638">638</a></span><span class="t"><span class="str">    :param secondary: The secondary OpenAPI document to fold into the primary.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t639" href="#t639">639</a></span><span class="t"><span class="str">    :type secondary: dict[str, Any]</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t640" href="#t640">640</a></span><span class="t"><span class="str">    :param secondary_suffix: Suffix appended to a secondary schema name on</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t641" href="#t641">641</a></span><span class="t"><span class="str">        collision with a different body. Defaults to ``&quot;_sep&quot;``.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t641" href="#t641">641</a></span><span class="t"><span class="str">        collision with a different body. Defaults to ``&quot;_extensions&quot;``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t642" href="#t642">642</a></span><span class="t"><span class="str">    :type secondary_suffix: str</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t643" href="#t643">643</a></span><span class="t"><span class="str">    :return: A new merged OpenAPI document.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t644" href="#t644">644</a></span><span class="t"><span class="str">    :rtype: dict[str, Any]</span>&nbsp;</span><span class="r"></span></p>
@@ -790,7 +790,7 @@
             <a class="nav" href="z_63a3cd2ff003c94b_path_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

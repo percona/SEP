@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_6f83b30fdb6a6182_config_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -260,7 +260,7 @@
     <p class="pln"><span class="n"><a id="t176" href="#t176">176</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Refresh Tasks-side overrides at this task boundary when the interval is due.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t177" href="#t177">177</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t178" href="#t178">178</a></span><span class="t"><span class="str">    Passes through to :meth:`WorkerRefresher.maybe_refresh`, which no-ops when</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t179" href="#t179">179</a></span><span class="t"><span class="str">    disarmed or inside the interval. Each refresher (SEP-side and Tasks-side)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t179" href="#t179">179</a></span><span class="t"><span class="str">    disarmed or inside the interval. Each refresher (PMM Extensions side and Tasks-side)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t180" href="#t180">180</a></span><span class="t"><span class="str">    keeps its own due-check state, so a boundary that is due for both pays two</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t181" href="#t181">181</a></span><span class="t"><span class="str">    refreshes.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t182" href="#t182">182</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
@@ -321,7 +321,7 @@
     <p class="run run2"><span class="n"><a id="t237" href="#t237">237</a></span><span class="t">    <span class="nam">periodic_task_name</span><span class="op">:</span> <span class="nam">str</span> <span class="op">|</span> <span class="key">None</span> <span class="op">=</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t238" href="#t238">238</a></span><span class="t">    <span class="nam">execution_data</span><span class="op">:</span> <span class="nam">PeriodicTaskExecuteRequest</span> <span class="op">|</span> <span class="key">None</span> <span class="op">=</span> <span class="key">None</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t239" href="#t239">239</a></span><span class="t"><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t240" href="#t240">240</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Define Celery task to execute a SEP task by name.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t240" href="#t240">240</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Define Celery task to execute a PMM Extensions task by name.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t241" href="#t241">241</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t242" href="#t242">242</a></span><span class="t"><span class="str">    :param self: The Celery task instance.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t243" href="#t243">243</a></span><span class="t"><span class="str">    :type self: CeleryTask</span>&nbsp;</span><span class="r"></span></p>
@@ -398,7 +398,7 @@
     <p class="pln"><span class="n"><a id="t314" href="#t314">314</a></span><span class="t"><span class="str">    :param task_history: The unsaved TaskHistory from</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t315" href="#t315">315</a></span><span class="t"><span class="str">        :func:`prepare_periodic_task_history`.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t316" href="#t316">316</a></span><span class="t"><span class="str">    :type task_history: TaskHistory</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t317" href="#t317">317</a></span><span class="t"><span class="str">    :param task_name: The SEP task name (used for dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t317" href="#t317">317</a></span><span class="t"><span class="str">    :param task_name: The PMM Extensions task name (used for dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t318" href="#t318">318</a></span><span class="t"><span class="str">    :type task_name: str</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t319" href="#t319">319</a></span><span class="t"><span class="str">    :param periodic_task_name: The periodic-task name, if any (used to enrich</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t320" href="#t320">320</a></span><span class="t"><span class="str">        the alert source).</span>&nbsp;</span><span class="r"></span></p>
@@ -437,7 +437,7 @@
     <p class="pln"><span class="n"><a id="t353" href="#t353">353</a></span><span class="t"><span class="str">    without raising so Celery&#x27;s ``autoretry_for=(Exception,)`` does not fire.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t354" href="#t354">354</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t355" href="#t355">355</a></span><span class="t"><span class="str">    :param task_history: The unsaved TaskHistory to fail.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t356" href="#t356">356</a></span><span class="t"><span class="str">    :param task_name: The SEP task name (used for the dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t356" href="#t356">356</a></span><span class="t"><span class="str">    :param task_name: The PMM Extensions task name (used for the dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t357" href="#t357">357</a></span><span class="t"><span class="str">    :param periodic_task_name: The periodic-task name, if any (enriches the alert</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t358" href="#t358">358</a></span><span class="t"><span class="str">        source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t359" href="#t359">359</a></span><span class="t"><span class="str">    :param reason: The operator-facing failure reason, written to stderr and used</span>&nbsp;</span><span class="r"></span></p>
@@ -513,7 +513,7 @@
     <p class="pln"><span class="n"><a id="t429" href="#t429">429</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t430" href="#t430">430</a></span><span class="t"><span class="str">    :param task_history: The unsaved TaskHistory built by</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t431" href="#t431">431</a></span><span class="t"><span class="str">        :func:`prepare_periodic_task_history`.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t432" href="#t432">432</a></span><span class="t"><span class="str">    :param task_name: The SEP task name (used for dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t432" href="#t432">432</a></span><span class="t"><span class="str">    :param task_name: The PMM Extensions task name (used for dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t433" href="#t433">433</a></span><span class="t"><span class="str">    :param periodic_task_name: The periodic-task name, if any (used to enrich</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t434" href="#t434">434</a></span><span class="t"><span class="str">        the alert source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t435" href="#t435">435</a></span><span class="t"><span class="str">    :return: The saved, FAILED TaskHistory.</span>&nbsp;</span><span class="r"></span></p>
@@ -554,7 +554,7 @@
     <p class="pln"><span class="n"><a id="t470" href="#t470">470</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t471" href="#t471">471</a></span><span class="t"><span class="str">    :param task_history: The TaskHistory to dispatch, from any gated path</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t472" href="#t472">472</a></span><span class="t"><span class="str">        (sync, connectivity, chain, queue, or periodic).</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t"><span class="str">    :param task_name: The SEP task name (used for dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t"><span class="str">    :param task_name: The PMM Extensions task name (used for dedup key and alert source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t474" href="#t474">474</a></span><span class="t"><span class="str">    :param periodic_task_name: The periodic-task name, if any (used to enrich</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t475" href="#t475">475</a></span><span class="t"><span class="str">        the alert source).</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t476" href="#t476">476</a></span><span class="t"><span class="str">    :param session: The caller&#x27;s session, forwarded to</span>&nbsp;</span><span class="r"></span></p>
@@ -1309,7 +1309,7 @@
     <p class="run"><span class="n"><a id="t1225" href="#t1225">1225</a></span><span class="t">            <span class="nam">summary</span> <span class="op">=</span> <span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1226" href="#t1226">1226</a></span><span class="t">                <span class="fst">f&quot;</span><span class="fst">Nomad </span><span class="op">{</span><span class="nam">label</span><span class="op">}</span><span class="fst"> certificate </span><span class="op">{</span><span class="nam">path</span><span class="op">.</span><span class="nam">name</span><span class="op">!</span><span class="nam">r</span><span class="op">}</span><span class="fst"> has expired or expires </span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1227" href="#t1227">1227</a></span><span class="t">                <span class="fst">f&quot;</span><span class="fst">today (not_valid_after_utc=</span><span class="op">{</span><span class="nam">not_after</span><span class="op">.</span><span class="nam">isoformat</span><span class="op">(</span><span class="op">)</span><span class="op">}</span><span class="fst">). </span><span class="fst">&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t1228" href="#t1228">1228</a></span><span class="t">                <span class="str">&quot;Renew the certificate and restart SEP so task dispatch continues.&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t1228" href="#t1228">1228</a></span><span class="t">                <span class="str">&quot;Renew the certificate and restart PMM Extensions so task dispatch continues.&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t1229" href="#t1229">1229</a></span><span class="t">            <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1230" href="#t1230">1230</a></span><span class="t">        <span class="key">else</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1231" href="#t1231">1231</a></span><span class="t">            <span class="nam">severity</span> <span class="op">=</span> <span class="nam">AlertSeverity</span><span class="op">.</span><span class="nam">WARNING</span>&nbsp;</span><span class="r"></span></p>
@@ -1350,7 +1350,7 @@
             <a class="nav" href="z_6f83b30fdb6a6182_config_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

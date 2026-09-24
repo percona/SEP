@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_9f5ad95eb04b6705_engine_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -829,7 +829,7 @@
     <p class="run run2"><span class="n"><a id="t745" href="#t745">745</a></span><span class="t">    <span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">TaskHistoryLatestStatus</span> <span class="op">|</span> <span class="key">None</span><span class="op">]</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t746" href="#t746">746</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Return the latest known history projection for each task name.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t747" href="#t747">747</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t748" href="#t748">748</a></span><span class="t"><span class="str">        Status resolution matches SEP list helpers: histories are considered in</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t748" href="#t748">748</a></span><span class="t"><span class="str">        Status resolution matches PMM Extensions list helpers: histories are considered in</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t749" href="#t749">749</a></span><span class="t"><span class="str">        ``created_at`` descending order and the newest non-null status wins.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t750" href="#t750">750</a></span><span class="t"><span class="str">        ``finished_at`` is resolved independently as the ``max`` across all of a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t751" href="#t751">751</a></span><span class="t"><span class="str">        task&#x27;s history rows, so an in-progress re-run (whose newest row has a</span>&nbsp;</span><span class="r"></span></p>
@@ -1422,7 +1422,7 @@
     <p class="pln"><span class="n"><a id="t1338" href="#t1338">1338</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1339" href="#t1339">1339</a></span><span class="t"><span class="str">        Rows are filtered by *excluding* :data:`NON_PERSISTABLE_STEPS` &#8212; the same</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1340" href="#t1340">1340</a></span><span class="t"><span class="str">        set :meth:`NomadStep.is_persistable` tests &#8212; rather than by selecting the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1341" href="#t1341">1341</a></span><span class="t"><span class="str">        Nomad steps SEP drains: ``source`` also carries non-Nomad producers</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1341" href="#t1341">1341</a></span><span class="t"><span class="str">        Nomad steps PMM Extensions drains: ``source`` also carries non-Nomad producers</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1342" href="#t1342">1342</a></span><span class="t"><span class="str">        (the Celery executor writes ``&quot;execution&quot;``, legacy rows carry</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1343" href="#t1343">1343</a></span><span class="t"><span class="str">        ``&quot;step1&quot;``), and selecting by Nomad step name would drop every one of</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1344" href="#t1344">1344</a></span><span class="t"><span class="str">        them and report ``UNKNOWN`` for tasks whose capture is known-complete.</span>&nbsp;</span><span class="r"></span></p>
@@ -1667,7 +1667,7 @@
             <a class="nav" href="z_9f5ad95eb04b6705_engine_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

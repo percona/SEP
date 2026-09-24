@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_f8320077b3791e31_routes_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -105,7 +105,7 @@
     <p class="pln"><span class="n"><a id="t21" href="#t21">21</a></span><span class="t"><span class="str">per-task recorder the owning plugin declared. The recorder path is resolved</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t22" href="#t22">22</a></span><span class="t"><span class="str">lazily via :func:`app.tasks.hook_resolver.resolve_hook`, mirroring</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t23" href="#t23">23</a></span><span class="t"><span class="str">:mod:`app.tasks.alert_hooks`, so this channel stays free of any static</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">``app.sep`` import. The result is passed through as a plain ``dict`` &#8212; the tasks</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t24" href="#t24">24</a></span><span class="t"><span class="str">``app.extensions`` import. The result is passed through as a plain ``dict`` &#8212; the tasks</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t25" href="#t25">25</a></span><span class="t"><span class="str">service never learns a plugin&#x27;s field names; the recorder validates the payload</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t26" href="#t26">26</a></span><span class="t"><span class="str">into its own model.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t27" href="#t27">27</a></span><span class="t"><span class="str">&quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -134,8 +134,8 @@
     <p class="pln"><span class="n"><a id="t50" href="#t50">50</a></span><span class="t"><span class="com">#: working directory &#8212; which the job spec pins to the task&#x27;s output-files</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t51" href="#t51">51</a></span><span class="t"><span class="com">#: directory, so this resolves under :attr:`Task.output_files_path` on read. The</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t"><span class="com">#: leading dot keeps it out of the output-files listing, which skips dot-prefixed</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="com">#: names: this is SEP&#x27;s own protocol, not an artifact for a user to download.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t"><span class="nam">RUN_RESULT_FILENAME</span> <span class="op">=</span> <span class="str">&quot;.sep-run-result.json&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="com">#: names: this is PMM Extensions&#x27; own protocol, not an artifact for a user to download.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t"><span class="nam">RUN_RESULT_FILENAME</span> <span class="op">=</span> <span class="str">&quot;.pmm-extensions-run-result.json&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t"><span class="com">#: Upper bound on a result file&#x27;s size. A run result is a handful of scalar</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t"><span class="com">#: fields; anything larger is a payload bug and is discarded unread.</span>&nbsp;</span><span class="r"></span></p>
@@ -153,7 +153,7 @@
     <p class="run run2"><span class="n"><a id="t69" href="#t69">69</a></span><span class="t"><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">dict</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">Any</span><span class="op">]</span> <span class="op">|</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t70" href="#t70">70</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Read a terminal run&#x27;s result file through the executor.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t71" href="#t71">71</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t"><span class="str">    The read opts out of anonymization: this content is SEP&#x27;s own protocol, not</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t72" href="#t72">72</a></span><span class="t"><span class="str">    The read opts out of anonymization: this content is PMM Extensions&#x27; own protocol, not</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t73" href="#t73">73</a></span><span class="t"><span class="str">    output served to a user, and redaction would corrupt the very fields the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t74" href="#t74">74</a></span><span class="t"><span class="str">    recorder consumes. The read is best-effort: every shape of &quot;there is no</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t75" href="#t75">75</a></span><span class="t"><span class="str">    usable result&quot; maps to ``None`` &#8212; no file, an empty one, an executor without</span>&nbsp;</span><span class="r"></span></p>
@@ -265,7 +265,7 @@
             <a class="nav" href="z_f8320077b3791e31_routes_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

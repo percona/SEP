@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_fabc837f9b5d9671_config_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -515,7 +515,7 @@
     <p class="run"><span class="n"><a id="t431" href="#t431">431</a></span><span class="t">        <span class="key">return</span> <span class="key">None</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t432" href="#t432">432</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t433" href="#t433">433</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t434" href="#t434">434</a></span><span class="t"><span class="nam">_INTERNAL_TOKEN_LABEL</span> <span class="op">=</span> <span class="str">b&quot;sep-internal-token&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t434" href="#t434">434</a></span><span class="t"><span class="nam">_INTERNAL_TOKEN_LABEL</span> <span class="op">=</span> <span class="str">b&quot;extensions-internal-token&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t435" href="#t435">435</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t436" href="#t436">436</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t437" href="#t437">437</a></span><span class="t"><span class="key">def</span> <span class="nam">_encryption_key_error</span><span class="op">(</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">str</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -567,7 +567,7 @@
     <p class="pln"><span class="n"><a id="t483" href="#t483">483</a></span><span class="t"><span class="str">        timer; the same value is also the hang budget passed to</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t484" href="#t484">484</a></span><span class="t"><span class="str">        ``bounded_refresh``, so lowering it for fresher overrides also</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t485" href="#t485">485</a></span><span class="t"><span class="str">        tightens how long a due task may stall. A child running both the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t486" href="#t486">486</a></span><span class="t"><span class="str">        SEP-side and Tasks-side refreshers can pay that budget twice when</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t486" href="#t486">486</a></span><span class="t"><span class="str">        PMM Extensions side and Tasks-side refreshers can pay that budget twice when</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t487" href="#t487">487</a></span><span class="t"><span class="str">        both are due at the same boundary. A non-positive value is rejected</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t488" href="#t488">488</a></span><span class="t"><span class="str">        so neither path can hammer the database every iteration.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t489" href="#t489">489</a></span><span class="t"><span class="str">    :param REFRESHER_ENABLED: Master kill-switch for the DB-override</span>&nbsp;</span><span class="r"></span></p>
@@ -651,25 +651,25 @@
     <p class="run run2"><span class="n"><a id="t567" href="#t567">567</a></span><span class="t">    <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t568" href="#t568">568</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t569" href="#t569">569</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t570" href="#t570">570</a></span><span class="t"><span class="key">class</span> <span class="nam">_SEPDatabaseSettings</span><span class="op">(</span><span class="nam">BaseYamlSettings</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t571" href="#t571">571</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Resolve the SEP service&#x27;s database options in isolation.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t570" href="#t570">570</a></span><span class="t"><span class="key">class</span> <span class="nam">_ExtensionsDatabaseSettings</span><span class="op">(</span><span class="nam">BaseYamlSettings</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t571" href="#t571">571</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Resolve the PMM Extensions service&#x27;s database options in isolation.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t572" href="#t572">572</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t573" href="#t573">573</a></span><span class="t"><span class="str">    ``Settings`` cannot read ``sep_settings`` while it is being constructed:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t573" href="#t573">573</a></span><span class="t"><span class="str">    ``Settings`` cannot read ``extensions_settings`` while it is being constructed:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t574" href="#t574">574</a></span><span class="t"><span class="str">    ``BaseYamlAppSettings.BACKEND_CORS_ORIGINS`` defaults off ``settings``, so</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t575" href="#t575">575</a></span><span class="t"><span class="str">    forcing the SEP proxy re-enters the global proxy that is still resolving. This</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t575" href="#t575">575</a></span><span class="t"><span class="str">    forcing the PMM Extensions proxy re-enters the global proxy that is still resolving. This</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t576" href="#t576">576</a></span><span class="t"><span class="str">    reads the same ``EXTENSIONS__DATABASE__*`` sources without either proxy.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t577" href="#t577">577</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t578" href="#t578">578</a></span><span class="t"><span class="str">    :cvar SETTINGS_PREFIXES: The prefix the probe resolves its environment and YAML</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t579" href="#t579">579</a></span><span class="t"><span class="str">        sources under. Set to [&quot;EXTENSIONS&quot;].</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t580" href="#t580">580</a></span><span class="t"><span class="str">    :param DATABASE: The SEP service&#x27;s database connection options.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t580" href="#t580">580</a></span><span class="t"><span class="str">    :param DATABASE: The PMM Extensions service&#x27;s database connection options.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t581" href="#t581">581</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t582" href="#t582">582</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t583" href="#t583">583</a></span><span class="t">    <span class="nam">SETTINGS_PREFIXES</span><span class="op">:</span> <span class="nam">ClassVar</span><span class="op">[</span><span class="nam">list</span><span class="op">[</span><span class="nam">str</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="str">&quot;EXTENSIONS&quot;</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t584" href="#t584">584</a></span><span class="t">    <span class="nam">DATABASE</span><span class="op">:</span> <span class="nam">DatabaseOptions</span> <span class="op">=</span> <span class="nam">DatabaseOptions</span><span class="op">(</span><span class="nam">NAME</span><span class="op">=</span><span class="str">&quot;sep.db&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t584" href="#t584">584</a></span><span class="t">    <span class="nam">DATABASE</span><span class="op">:</span> <span class="nam">DatabaseOptions</span> <span class="op">=</span> <span class="nam">DatabaseOptions</span><span class="op">(</span><span class="nam">NAME</span><span class="op">=</span><span class="str">&quot;extensions.db&quot;</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t585" href="#t585">585</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t586" href="#t586">586</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t587" href="#t587">587</a></span><span class="t"><span class="key">class</span> <span class="nam">BeatStoreDefaultSource</span><span class="op">(</span><span class="nam">PydanticBaseSettingsSource</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t588" href="#t588">588</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Supply the celery-beat store URI derived from the SEP database.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t588" href="#t588">588</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Supply the celery-beat store URI derived from the PMM Extensions database.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t589" href="#t589">589</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t590" href="#t590">590</a></span><span class="t"><span class="str">    Ranked last, and skipped entirely once a real source &#8212; init kwarg, environment,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t591" href="#t591">591</a></span><span class="t"><span class="str">    dotenv, secret file, or YAML profile &#8212; supplies ``CELERY__BEAT_DBURI``. The</span>&nbsp;</span><span class="r"></span></p>
@@ -715,10 +715,10 @@
     <p class="pln"><span class="n"><a id="t631" href="#t631">631</a></span><span class="t"><span class="str">        sources above this one already merged, so withholding the key whenever one</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t632" href="#t632">632</a></span><span class="t"><span class="str">        of them supplies it keeps the collision from arising at all.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t633" href="#t633">633</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t634" href="#t634">634</a></span><span class="t"><span class="str">        :return: The ``CELERY.BEAT_DBURI`` default derived from SEP&#x27;s database, or an</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t634" href="#t634">634</a></span><span class="t"><span class="str">        :return: The ``CELERY.BEAT_DBURI`` default derived from PMM Extensions&#x27; database, or an</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t635" href="#t635">635</a></span><span class="t"><span class="str">            empty payload when a configured source already supplies the store.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t636" href="#t636">636</a></span><span class="t"><span class="str">        :raises ValidationError: When the resolved ``EXTENSIONS__DATABASE__*`` values do</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t637" href="#t637">637</a></span><span class="t"><span class="str">            not validate, so an unusable SEP database fails ``Settings``</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t637" href="#t637">637</a></span><span class="t"><span class="str">            not validate, so an unusable PMM Extensions database fails ``Settings``</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t638" href="#t638">638</a></span><span class="t"><span class="str">            construction instead of yielding a malformed store URI. Only a</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t639" href="#t639">639</a></span><span class="t"><span class="str">            deployment that leaves the beat store to be derived is held to this.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t640" href="#t640">640</a></span><span class="t"><span class="str">        &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
@@ -727,7 +727,7 @@
     <p class="run run2"><span class="n"><a id="t643" href="#t643">643</a></span><span class="t">            <span class="nam">key</span><span class="op">.</span><span class="nam">lower</span><span class="op">(</span><span class="op">)</span> <span class="op">==</span> <span class="str">&quot;beat_dburi&quot;</span> <span class="key">for</span> <span class="nam">key</span> <span class="key">in</span> <span class="nam">configured</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t644" href="#t644">644</a></span><span class="t">        <span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t645" href="#t645">645</a></span><span class="t">            <span class="key">return</span> <span class="op">{</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t646" href="#t646">646</a></span><span class="t">        <span class="nam">database</span> <span class="op">=</span> <span class="nam">_SEPDatabaseSettings</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t646" href="#t646">646</a></span><span class="t">        <span class="nam">database</span> <span class="op">=</span> <span class="nam">_ExtensionsDatabaseSettings</span><span class="op">(</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t647" href="#t647">647</a></span><span class="t">            <span class="nam">_env_file</span><span class="op">=</span><span class="nam">self</span><span class="op">.</span><span class="nam">_env_file</span><span class="op">,</span> <span class="nam">_secrets_dir</span><span class="op">=</span><span class="nam">self</span><span class="op">.</span><span class="nam">_secrets_dir</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t648" href="#t648">648</a></span><span class="t">        <span class="op">)</span><span class="op">.</span><span class="nam">DATABASE</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t649" href="#t649">649</a></span><span class="t">        <span class="key">return</span> <span class="op">{</span><span class="str">&quot;CELERY&quot;</span><span class="op">:</span> <span class="op">{</span><span class="str">&quot;BEAT_DBURI&quot;</span><span class="op">:</span> <span class="nam">database</span><span class="op">.</span><span class="nam">URL</span><span class="op">}</span><span class="op">}</span>&nbsp;</span><span class="r"></span></p>
@@ -737,21 +737,21 @@
     <p class="pln"><span class="n"><a id="t653" href="#t653">653</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Define the main application settings.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t654" href="#t654">654</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t655" href="#t655">655</a></span><span class="t"><span class="str">    :param CELERY: Celery configuration options. ``BEAT_DBURI`` defaults to the</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t656" href="#t656">656</a></span><span class="t"><span class="str">        resolved SEP database connection, so the beat store follows</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t656" href="#t656">656</a></span><span class="t"><span class="str">        resolved PMM Extensions database connection, so the beat store follows</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t657" href="#t657">657</a></span><span class="t"><span class="str">        ``EXTENSIONS__DATABASE__*`` unless a source configures it explicitly.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t658" href="#t658">658</a></span><span class="t"><span class="str">    :param ALLOW_CONCURRENT_SESSIONS: Whether to allow concurrent sessions for the same</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t659" href="#t659">659</a></span><span class="t"><span class="str">        user. Defaults to False, meaning all previous sessions will be invalidated once</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t660" href="#t660">660</a></span><span class="t"><span class="str">        a new one is created.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t661" href="#t661">661</a></span><span class="t"><span class="str">    :param SECRET_KEY: The secret key used for signing tokens. Defaults to</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t662" href="#t662">662</a></span><span class="t"><span class="str">        ``secrets.token_urlsafe(32)``.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t663" href="#t663">663</a></span><span class="t"><span class="str">    :param EXTENSIONS_INTERNAL_TOKEN: A long random secret used for SEP-internal</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t663" href="#t663">663</a></span><span class="t"><span class="str">    :param EXTENSIONS_INTERNAL_TOKEN: A long random secret used for PMM Extensions internal</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t664" href="#t664">664</a></span><span class="t"><span class="str">        service-to-service authentication (e.g. scheduled inventory sync). When</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t665" href="#t665">665</a></span><span class="t"><span class="str">        unset, it is derived from ``SECRET_KEY`` by ``derive_internal_token`` so</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t666" href="#t666">666</a></span><span class="t"><span class="str">        every process sharing ``SECRET_KEY`` resolves the identical token.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t667" href="#t667">667</a></span><span class="t"><span class="str">        Generate an explicit value with ``openssl rand -hex 32`` to rotate it</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t668" href="#t668">668</a></span><span class="t"><span class="str">        independently of ``SECRET_KEY``.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t669" href="#t669">669</a></span><span class="t"><span class="str">    :param ENCRYPTION_KEY: The Fernet key :mod:`app.core.encryption` uses to</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t670" href="#t670">670</a></span><span class="t"><span class="str">        encrypt values SEP stores in its own databases. It has no default and is</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t670" href="#t670">670</a></span><span class="t"><span class="str">        encrypt values PMM Extensions stores in its own databases. It has no default and is</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t671" href="#t671">671</a></span><span class="t"><span class="str">        never derived from ``SECRET_KEY``: ciphertext outlives the process that</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t672" href="#t672">672</a></span><span class="t"><span class="str">        wrote it, so a key that changed on restart would orphan every encrypted</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t673" href="#t673">673</a></span><span class="t"><span class="str">        row. Every environment supplies its own, as an environment variable or</span>&nbsp;</span><span class="r"></span></p>
@@ -835,7 +835,7 @@
     <p class="pln"><span class="n"><a id="t751" href="#t751">751</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Derive ``EXTENSIONS_INTERNAL_TOKEN`` from ``SECRET_KEY`` when it is unset.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t752" href="#t752">752</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t753" href="#t753">753</a></span><span class="t"><span class="str">        Every process sharing ``SECRET_KEY`` derives the identical token via</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t754" href="#t754">754</a></span><span class="t"><span class="str">        HMAC-SHA256, so SEP-internal service-to-service authentication works</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t754" href="#t754">754</a></span><span class="t"><span class="str">        HMAC-SHA256, so PMM Extensions internal service-to-service authentication works</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t755" href="#t755">755</a></span><span class="t"><span class="str">        across the web apps and the lifespan-less Celery worker without</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t756" href="#t756">756</a></span><span class="t"><span class="str">        persisting or distributing a separate secret. An explicitly configured</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t757" href="#t757">757</a></span><span class="t"><span class="str">        ``EXTENSIONS_INTERNAL_TOKEN`` takes precedence so it can be rotated</span>&nbsp;</span><span class="r"></span></p>
@@ -1191,7 +1191,7 @@
             <a class="nav" href="z_fabc837f9b5d9671_config_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>

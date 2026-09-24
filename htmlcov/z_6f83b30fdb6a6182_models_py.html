@@ -62,12 +62,12 @@
             <button type="button" class="par run show_par button_toggle_par" value="par" data-shortcut="p" title="Toggle lines partially run">6<span class="text"> partial</span></button>
         </h2>
         <p class="text">
-            <a id="prevFileLink" class="nav" href="z_93872b2c1b812f0f_2026_09_24_1200-afa9bedb3b0b_rename_ciphertext_marker_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a id="prevFileLink" class="nav" href="z_93872b2c1b812f0f_2026_09_24_1300-f0ee5b600303_rewrite_persisted_extensions_module_paths_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a id="indexLink" class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a id="nextFileLink" class="nav" href="z_6cd9b612e247317a_crud_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -281,10 +281,10 @@
     <p class="pln"><span class="n"><a id="t197" href="#t197">197</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t198" href="#t198">198</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t199" href="#t199">199</a></span><span class="t"><span class="key">class</span> <span class="nam">LogCaptureStatusEnum</span><span class="op">(</span><span class="nam">StrEnum</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t200" href="#t200">200</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Describe how completely SEP captured a task&#x27;s log stream.</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t200" href="#t200">200</a></span><span class="t">    <span class="str">&quot;&quot;&quot;Describe how completely PMM Extensions captured a task&#x27;s log stream.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t201" href="#t201">201</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t202" href="#t202">202</a></span><span class="t"><span class="str">    Distinguishes a stream that genuinely produced nothing from one whose bytes</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t203" href="#t203">203</a></span><span class="t"><span class="str">    were lost before SEP could read them &#8212; the stored offsets alone cannot tell</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t203" href="#t203">203</a></span><span class="t"><span class="str">    were lost before PMM Extensions could read them &#8212; the stored offsets alone cannot tell</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t204" href="#t204">204</a></span><span class="t"><span class="str">    those apart, since both leave the cursors at zero.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t205" href="#t205">205</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t206" href="#t206">206</a></span><span class="t"><span class="str">    ``UNKNOWN`` is the honest verdict where no evidence survives: rows written</span>&nbsp;</span><span class="r"></span></p>
@@ -817,7 +817,7 @@
     <p class="pln"><span class="n"><a id="t733" href="#t733">733</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t734" href="#t734">734</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t735" href="#t735">735</a></span><span class="t"><span class="com">#: Maximum stored length of ``TaskHistory.failure_reason``. Above every reason</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t736" href="#t736">736</a></span><span class="t"><span class="com">#: SEP composes from fixed prose alone; the bound is for the three that</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t736" href="#t736">736</a></span><span class="t"><span class="com">#: PMM Extensions composes from fixed prose alone; the bound is for the three that</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t737" href="#t737">737</a></span><span class="t"><span class="com">#: interpolate a value &#8212; the payload reference&#x27;s error, a Nomad step name and</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t738" href="#t738">738</a></span><span class="t"><span class="com">#: the resolved callable path &#8212; none of which is bounded at composition time.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t739" href="#t739">739</a></span><span class="t"><span class="nam">MAX_FAILURE_REASON_LENGTH</span> <span class="op">=</span> <span class="num">500</span>&nbsp;</span><span class="r"></span></p>
@@ -1120,7 +1120,7 @@
     <p class="pln"><span class="n"><a id="t1036" href="#t1036">1036</a></span><span class="t"><span class="str">    :param staging: Bytes pending flush to the chunk store.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1037" href="#t1037">1037</a></span><span class="t"><span class="str">    :param staging_updated_at: When ``staging`` was last modified; used to age</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1038" href="#t1038">1038</a></span><span class="t"><span class="str">        out small buffers after ``MAX_AGE_SEC``.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1039" href="#t1039">1039</a></span><span class="t"><span class="str">    :param capture_status: How completely SEP captured this ``(source, stream)``</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1039" href="#t1039">1039</a></span><span class="t"><span class="str">    :param capture_status: How completely PMM Extensions captured this ``(source, stream)``</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1040" href="#t1040">1040</a></span><span class="t"><span class="str">        pair. New rows start ``INCOMPLETE`` and are upgraded once the stream is</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1041" href="#t1041">1041</a></span><span class="t"><span class="str">        drained to EOF; rows predating the column take ``UNKNOWN`` from the</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1042" href="#t1042">1042</a></span><span class="t"><span class="str">        column&#x27;s server default.</span>&nbsp;</span><span class="r"></span></p>
@@ -1256,7 +1256,7 @@
     <p class="pln"><span class="n"><a id="t1172" href="#t1172">1172</a></span><span class="t"><span class="str">    :param has_logs: Whether this task history has any readable log content --</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1173" href="#t1173">1173</a></span><span class="t"><span class="str">        either a chunk-store row or a legacy ``tracking[&quot;task_logs&quot;]`` blob.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1174" href="#t1174">1174</a></span><span class="t"><span class="str">        Populated by list/retrieve routes; defaults to ``False``.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1175" href="#t1175">1175</a></span><span class="t"><span class="str">    :param log_capture: How completely SEP captured this execution&#x27;s logs,</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1175" href="#t1175">1175</a></span><span class="t"><span class="str">    :param log_capture: How completely PMM Extensions captured this execution&#x27;s logs,</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1176" href="#t1176">1176</a></span><span class="t"><span class="str">        aggregated over its state rows: any incomplete stream reports</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1177" href="#t1177">1177</a></span><span class="t"><span class="str">        ``&quot;incomplete&quot;``, else any unknown reports ``&quot;unknown&quot;``, else</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1178" href="#t1178">1178</a></span><span class="t"><span class="str">        ``&quot;complete&quot;``. Populated by list/retrieve routes; defaults to</span>&nbsp;</span><span class="r"></span></p>
@@ -1285,7 +1285,7 @@
     <p class="run"><span class="n"><a id="t1201" href="#t1201">1201</a></span><span class="t">    <span class="key">def</span> <span class="nam">_resolve_unreadable_request_leaves</span><span class="op">(</span><span class="nam">self</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">Self</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1202" href="#t1202">1202</a></span><span class="t">        <span class="str">&quot;&quot;&quot;Derive the indicator from a loaded row, or keep one already resolved.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1203" href="#t1203">1203</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t1204" href="#t1204">1204</a></span><span class="t"><span class="str">        A declared field rather than a ``computed_field`` because the SEP</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t1204" href="#t1204">1204</a></span><span class="t"><span class="str">        A declared field rather than a ``computed_field`` because the PMM Extensions</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1205" href="#t1205">1205</a></span><span class="t"><span class="str">        gateway re-validates this body into its own response model, and Pydantic</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1206" href="#t1206">1206</a></span><span class="t"><span class="str">        does not accept a computed field on validation. By then the leaf is</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t1207" href="#t1207">1207</a></span><span class="t"><span class="str">        already ``null`` and the indicator cannot be re-derived, so a computed</span>&nbsp;</span><span class="r"></span></p>
@@ -1559,12 +1559,12 @@
 <footer>
     <div class="content">
         <p>
-            <a class="nav" href="z_93872b2c1b812f0f_2026_09_24_1200-afa9bedb3b0b_rename_ciphertext_marker_py.html">&#xab; prev</a> &nbsp; &nbsp;
+            <a class="nav" href="z_93872b2c1b812f0f_2026_09_24_1300-f0ee5b600303_rewrite_persisted_extensions_module_paths_py.html">&#xab; prev</a> &nbsp; &nbsp;
             <a class="nav" href="index.html">&Hat; index</a> &nbsp; &nbsp;
             <a class="nav" href="z_6cd9b612e247317a_crud_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.15.4">coverage.py v7.15.4</a>,
-            created at 2026-09-24 12:25 +0000
+            created at 2026-09-24 17:28 +0000
         </p>
     </div>
 </footer>
