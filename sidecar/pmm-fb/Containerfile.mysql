@@ -1,4 +1,4 @@
-# Image for the sep-mysql target node; see mysql-target.md. Built with the
+# Image for the extensions-mysql target node; see mysql-target.md. Built with the
 # parent directory (sidecar/) as context — compose.yaml sets that.
 ARG PMM_FB_TAG
 # The feature-build client exists only for amd64. An arm64 engine passes the
@@ -60,7 +60,7 @@ RUN [ -z "${PMM_CLIENT_IMAGE}" ] || [ -z "${NOMAD_VERSION}" ] \
     || { if [ -z "${PMM_FB_TAG}" ] && [ -z "${NOMAD_VERSION_FB_TAG}" ]; then \
          echo "both PMM_FB_TAG and NOMAD_VERSION_FB_TAG are blank" >&2; \
        else \
-         echo "NOMAD_VERSION=${NOMAD_VERSION} was read from PMM_FB_TAG=${NOMAD_VERSION_FB_TAG}, but this build pins PMM_FB_TAG=${PMM_FB_TAG} and copies its client from ${PMM_CLIENT_IMAGE}, whose Nomad cannot move with the feature build: build sep-mysql on an amd64 engine to read the new client's tools/nomad, then update NOMAD_VERSION and NOMAD_VERSION_FB_TAG together" >&2; \
+         echo "NOMAD_VERSION=${NOMAD_VERSION} was read from PMM_FB_TAG=${NOMAD_VERSION_FB_TAG}, but this build pins PMM_FB_TAG=${PMM_FB_TAG} and copies its client from ${PMM_CLIENT_IMAGE}, whose Nomad cannot move with the feature build: build extensions-mysql on an amd64 engine to read the new client's tools/nomad, then update NOMAD_VERSION and NOMAD_VERSION_FB_TAG together" >&2; \
        fi; \
        exit 1; }
 COPY clone3_probe.py /usr/local/bin/clone3_probe.py

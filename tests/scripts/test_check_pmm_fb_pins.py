@@ -40,7 +40,7 @@ VALUELESS_PIN = """\
 services:
   pmm-server:
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
+  extensions-mysql:
     build:
       args:
         PMM_FB_TAG:
@@ -57,7 +57,7 @@ VALUELESS_ARGS = """\
 services:
   pmm-server:
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
+  extensions-mysql:
     build:
       args:
 """
@@ -72,7 +72,7 @@ DECORATED_PIN = """\
 services:
   pmm-server:
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
+  extensions-mysql:
     build:
       args:
         PMM_FB_TAG: prefix-${PMM_FB_TAG:-T}
@@ -91,7 +91,7 @@ REWIRED_PIN = """\
 services:
   pmm-server:
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-T}
-  sep-mysql:
+  extensions-mysql:
     build:
       args:
         PMM_FB_TAG: ${OTHER_TAG:-T}
@@ -110,7 +110,7 @@ EMPTY_PIN = """\
 services:
   pmm-server:
     image: docker.io/perconalab/pmm-server-fb:${PMM_FB_TAG:-}
-  sep-mysql:
+  extensions-mysql:
     build:
       args:
         PMM_FB_TAG: ${PMM_FB_TAG:-}
@@ -195,7 +195,7 @@ def test_a_drifting_server_tag_is_caught(
 @pytest.mark.parametrize(
     "content",
     [
-        pytest.param("services: {}\n", id="no-sep-mysql-service"),
+        pytest.param("services: {}\n", id="no-extensions-mysql-service"),
         pytest.param("just a string\n", id="not-a-mapping"),
         pytest.param(VALUELESS_PIN, id="a-pin-with-no-value"),
         pytest.param(VALUELESS_ARGS, id="build-args-with-no-mapping"),

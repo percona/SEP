@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Cover the sep-mysql build's Nomad-witness guard."""
+"""Cover the extensions-mysql build's Nomad-witness guard."""
 
 import os
 import re
@@ -171,16 +171,31 @@ def test_the_extracted_guard_reads_every_arg(name: str) -> None:
     ("client", "version", "tag", "witness", "expected", "stderr_marker"),
     [
         pytest.param(
-            "", ANY_VERSION, NEW_TAG, OLD_TAG, 0, None,
-            id="feature-build-client-abstains"
+            "",
+            ANY_VERSION,
+            NEW_TAG,
+            OLD_TAG,
+            0,
+            None,
+            id="feature-build-client-abstains",
         ),
         pytest.param(
-            RELEASED_CLIENT, ANY_VERSION, OLD_TAG, OLD_TAG, 0, None,
-            id="pairing-restated"
+            RELEASED_CLIENT,
+            ANY_VERSION,
+            OLD_TAG,
+            OLD_TAG,
+            0,
+            None,
+            id="pairing-restated",
         ),
         pytest.param(
-            RELEASED_CLIENT, ANY_VERSION, NEW_TAG, OLD_TAG, 1, None,
-            id="witness-left-behind"
+            RELEASED_CLIENT,
+            ANY_VERSION,
+            NEW_TAG,
+            OLD_TAG,
+            1,
+            None,
+            id="witness-left-behind",
         ),
         pytest.param(
             RELEASED_CLIENT, "", NEW_TAG, OLD_TAG, 0, None, id="parity-opted-out"

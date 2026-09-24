@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Check that every feature-build pin in the sep-mysql compose file names one build."""
+"""Check that every feature-build pin in the extensions-mysql compose file names one build."""
 
 import argparse
 import re
@@ -51,8 +51,8 @@ rather than read as ``T``.
 """
 
 SERVER_IMAGE = "pmm-server image"
-BUILD_TAG = "sep-mysql PMM_FB_TAG"
-WITNESS = "sep-mysql NOMAD_VERSION_FB_TAG"
+BUILD_TAG = "extensions-mysql PMM_FB_TAG"
+WITNESS = "extensions-mysql NOMAD_VERSION_FB_TAG"
 
 PRINTABLE = ("PMM_FB_TAG", "NOMAD_VERSION", "NOMAD_VERSION_FB_TAG")
 """Build args ``--print`` will resolve, for callers that read rather than parse."""
@@ -84,7 +84,7 @@ def committed_default(value: object, where: str, name: str, template: str) -> st
 
 
 def load_slots(compose_path: Path) -> tuple[object, dict[str, object]]:
-    """Return the ``pmm-server`` image and the ``sep-mysql`` build args.
+    """Return the ``pmm-server`` image and the ``extensions-mysql`` build args.
 
     Separated from resolving any particular pin so ``--print`` can read one slot
     out of a compose file that does not carry the others, the base revision of a
@@ -104,14 +104,14 @@ def load_slots(compose_path: Path) -> tuple[object, dict[str, object]]:
     try:
         services = data["services"]
         image = services["pmm-server"]["image"]
-        args = services["sep-mysql"]["build"]["args"]
+        args = services["extensions-mysql"]["build"]["args"]
     except (KeyError, TypeError) as exc:
         raise SystemExit(
-            f"ERROR: {compose_path} is not the sep-mysql harness: {exc}"
+            f"ERROR: {compose_path} is not the extensions-mysql harness: {exc}"
         ) from None
     if not isinstance(args, dict):
         raise SystemExit(
-            f"ERROR: {compose_path} is not the sep-mysql harness: sep-mysql build"
+            f"ERROR: {compose_path} is not the extensions-mysql harness: extensions-mysql build"
             f" args is {type(args).__name__}, not a mapping"
         )
     return image, args
@@ -126,14 +126,14 @@ def read_arg(args: Mapping[str, object], name: str) -> str:
     :raises SystemExit: When the arg is absent, or is not exactly its expansion.
     """
     if name not in args:
-        raise SystemExit(f"ERROR: sep-mysql declares no {name} build arg")
-    return committed_default(args[name], f"sep-mysql {name}", name, ARG_VALUE)
+        raise SystemExit(f"ERROR: extensions-mysql declares no {name} build arg")
+    return committed_default(args[name], f"extensions-mysql {name}", name, ARG_VALUE)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Compare the three committed spellings of the feature-build tag.
 
-    A repin has to move all of them: ``pmm-server``'s image and ``sep-mysql``'s
+    A repin has to move all of them: ``pmm-server``'s image and ``extensions-mysql``'s
     ``PMM_FB_TAG`` because the client and server ship Nomad builds that must
     speak RPC to each other, and ``NOMAD_VERSION_FB_TAG`` because it is what the
     arm64 build's guard weighs ``PMM_FB_TAG`` against. A witness left behind
@@ -151,7 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         file is not parseable as YAML.
     """
     parser = argparse.ArgumentParser(
-        description="Check that the sep-mysql feature-build pins name one build.",
+        description="Check that the extensions-mysql feature-build pins name one build.",
     )
     parser.add_argument(
         "--print",

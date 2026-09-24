@@ -54,17 +54,17 @@ ALL_CONTROLLERS = "cpuset cpu io memory pids"
 DATADIR_FAILURE = "Could not initialise the datadir"
 
 PASSWORDS = {
-    "SEP_MYSQL_ROOT_PASSWORD": "a",
-    "SEP_MYSQL_BACKUP_PASSWORD": "b",
-    "SEP_MYSQL_PMM_PASSWORD": "c",
+    "EXTENSIONS_MYSQL_ROOT_PASSWORD": "a",
+    "EXTENSIONS_MYSQL_BACKUP_PASSWORD": "b",
+    "EXTENSIONS_MYSQL_PMM_PASSWORD": "c",
 }
 """The three secrets the entrypoint refuses to start without."""
 
 REFUSAL_LINES = (
     "✗ clone3 is unimplemented here (ENOSYS): Nomad cannot launch a single task on this node",
-    "✗ Unprivileged container? compose.yaml runs sep-mysql privileged; a plain docker run needs --privileged or --security-opt seccomp=unconfined",
-    '✗ Emulated amd64 on an arm64 engine? Set SEP_MYSQL_PLATFORM=linux/arm64 in .env and re-run ./bootstrap.sh to build this node natively, or enable Rosetta (Docker Desktop → Settings → General → "Apple Virtualization framework" + "Use Rosetta for x86_64/amd64 emulation")',
-    "✗ SEP_FB_SKIP_CLONE3_CHECK=1 starts the node anyway (MySQL and inventory work; task execution will not)",
+    "✗ Unprivileged container? compose.yaml runs extensions-mysql privileged; a plain docker run needs --privileged or --security-opt seccomp=unconfined",
+    '✗ Emulated amd64 on an arm64 engine? Set EXTENSIONS_MYSQL_PLATFORM=linux/arm64 in .env and re-run ./bootstrap.sh to build this node natively, or enable Rosetta (Docker Desktop → Settings → General → "Apple Virtualization framework" + "Use Rosetta for x86_64/amd64 emulation")',
+    "✗ EXTENSIONS_FB_SKIP_CLONE3_CHECK=1 starts the node anyway (MySQL and inventory work; task execution will not)",
 )
 """The headline and the three actionable causes the refusal prints, in order.
 
@@ -176,14 +176,15 @@ def harness(tmp_path: Path) -> Harness:
         inherited = {
             name: value
             for name, value in os.environ.items()
-            if not name.startswith(("SEP_MYSQL_", "SEP_FB_")) and name != "DEBUG"
+            if not name.startswith(("EXTENSIONS_MYSQL_", "EXTENSIONS_FB_"))
+            and name != "DEBUG"
         }
         # Only the stubs once a command is omitted, so the host's own copy
         # cannot stand in for the one the precondition is meant to miss
         path = str(bin_dir) if omit else f"{bin_dir}{os.pathsep}{os.environ['PATH']}"
         environment = {**inherited, **PASSWORDS, "PATH": path}
         if skip_check:
-            environment["SEP_FB_SKIP_CLONE3_CHECK"] = "1"
+            environment["EXTENSIONS_FB_SKIP_CLONE3_CHECK"] = "1"
         return subprocess.run(
             [BASH, str(script)],
             capture_output=True,

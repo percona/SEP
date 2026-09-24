@@ -46,12 +46,14 @@ def arm64_client() -> str:
 
 
 ARM64_CLIENT = arm64_client()
-OWNED_SLOTS = ("SEP_MYSQL_PLATFORM", "SEP_MYSQL_PMM_CLIENT_IMAGE")
+OWNED_SLOTS = ("EXTENSIONS_MYSQL_PLATFORM", "EXTENSIONS_MYSQL_PMM_CLIENT_IMAGE")
 PASSWORDS = (
-    "SEP_MYSQL_ROOT_PASSWORD=a\nSEP_MYSQL_BACKUP_PASSWORD=b\nSEP_MYSQL_PMM_PASSWORD=c\n"
+    "EXTENSIONS_MYSQL_ROOT_PASSWORD=a\n"
+    "EXTENSIONS_MYSQL_BACKUP_PASSWORD=b\n"
+    "EXTENSIONS_MYSQL_PMM_PASSWORD=c\n"
 )
 
-SEEDED_ROOT_ONLY = "SEP_MYSQL_ROOT_PASSWORD=a\n"
+SEEDED_ROOT_ONLY = "EXTENSIONS_MYSQL_ROOT_PASSWORD=a\n"
 """An environment file missing the two passwords the seeder has to append."""
 
 REFUSED_NO_CLONE3 = 3
@@ -126,7 +128,7 @@ def harness(tmp_path: Path) -> Harness:
         inherited = {
             name: value
             for name, value in os.environ.items()
-            if not name.startswith(("SEP_MYSQL_", "SEP_FB_"))
+            if not name.startswith(("EXTENSIONS_MYSQL_", "EXTENSIONS_FB_"))
         }
         return subprocess.run(
             ["bash", str(fb_dir / "bootstrap.sh")],
@@ -146,8 +148,8 @@ def test_arm64_engine_selects_the_native_pair(harness: Harness) -> None:
 
     assert harness.run("aarch64").returncode == 0
     assert harness.slots() == {
-        "SEP_MYSQL_PLATFORM": "linux/arm64",
-        "SEP_MYSQL_PMM_CLIENT_IMAGE": ARM64_CLIENT,
+        "EXTENSIONS_MYSQL_PLATFORM": "linux/arm64",
+        "EXTENSIONS_MYSQL_PMM_CLIENT_IMAGE": ARM64_CLIENT,
     }
 
 
@@ -171,13 +173,13 @@ def test_amd64_engine_reclaims_slots_an_arm64_engine_wrote(harness: Harness) -> 
     arm64 variant.
     """
     harness.write_env(
-        f"SEP_MYSQL_PLATFORM=linux/arm64\nSEP_MYSQL_PMM_CLIENT_IMAGE={ARM64_CLIENT}\n"
+        f"EXTENSIONS_MYSQL_PLATFORM=linux/arm64\nEXTENSIONS_MYSQL_PMM_CLIENT_IMAGE={ARM64_CLIENT}\n"
     )
 
     assert harness.run("amd64").returncode == 0
     assert harness.slots() == {
-        "SEP_MYSQL_PLATFORM": "linux/amd64",
-        "SEP_MYSQL_PMM_CLIENT_IMAGE": "",
+        "EXTENSIONS_MYSQL_PLATFORM": "linux/amd64",
+        "EXTENSIONS_MYSQL_PMM_CLIENT_IMAGE": "",
     }
 
 
@@ -194,15 +196,15 @@ def test_amd64_engine_leaves_a_file_without_executor_slots_alone(
 
 def test_forced_amd64_on_arm64_blanks_the_client_slot(harness: Harness) -> None:
     """Select the feature-build client, not a released amd64 one, when forced."""
-    harness.write_env("SEP_MYSQL_PLATFORM=linux/amd64\n")
+    harness.write_env("EXTENSIONS_MYSQL_PLATFORM=linux/amd64\n")
 
     assert harness.run("aarch64").returncode == 0
-    assert harness.slots()["SEP_MYSQL_PMM_CLIENT_IMAGE"] == ""
+    assert harness.slots()["EXTENSIONS_MYSQL_PMM_CLIENT_IMAGE"] == ""
 
 
 def test_forced_amd64_refuses_an_emulator_without_clone3(harness: Harness) -> None:
     """Refuse rather than build a node that registers healthy and runs nothing."""
-    harness.write_env("SEP_MYSQL_PLATFORM=linux/amd64\n")
+    harness.write_env("EXTENSIONS_MYSQL_PLATFORM=linux/amd64\n")
 
     result = harness.run("aarch64", verdict="CLONE3_ENOSYS")
 
@@ -213,7 +215,8 @@ def test_forced_amd64_refuses_an_emulator_without_clone3(harness: Harness) -> No
 def test_the_probe_is_skippable_from_the_environment_file(harness: Harness) -> None:
     """Honour the skip override where an operator sets it, not only in the shell."""
     harness.write_env(
-        "SEP_MYSQL_PLATFORM=linux/amd64\n", extra="SEP_FB_SKIP_CLONE3_CHECK=1\n"
+        "EXTENSIONS_MYSQL_PLATFORM=linux/amd64\n",
+        extra="EXTENSIONS_FB_SKIP_CLONE3_CHECK=1\n",
     )
 
     assert harness.run("aarch64", verdict="CLONE3_ENOSYS").returncode == 0
@@ -221,7 +224,7 @@ def test_the_probe_is_skippable_from_the_environment_file(harness: Harness) -> N
 
 def test_an_unrecognised_platform_is_rejected(harness: Harness) -> None:
     """Reject a platform the build has no client for instead of guessing one."""
-    harness.write_env("SEP_MYSQL_PLATFORM=linux/riscv64\n")
+    harness.write_env("EXTENSIONS_MYSQL_PLATFORM=linux/riscv64\n")
 
     result = harness.run("aarch64")
 
@@ -291,6 +294,6 @@ def test_a_failed_password_append_stops_the_bootstrap(harness: Harness) -> None:
     result = harness.run("x86_64")
 
     assert result.returncode == REFUSED_BAD_INPUT
-    assert "Could not write SEP_MYSQL_BACKUP_PASSWORD" in result.stderr
-    assert "Added the SEP_MYSQL_BACKUP_PASSWORD" not in result.stderr
+    assert "Could not write EXTENSIONS_MYSQL_BACKUP_PASSWORD" in result.stderr
+    assert "Added the EXTENSIONS_MYSQL_BACKUP_PASSWORD" not in result.stderr
     assert harness.env_file.read_text(encoding="utf-8") == SEEDED_ROOT_ONLY
