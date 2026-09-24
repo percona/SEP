@@ -51,6 +51,7 @@ from app.sep.apps.framework.schema import (
     FormSection,
     HostField,
     IntegerField,
+    ITEM_DISPLAY_NAME_KEYS,
     iter_section_fields,
     ListView,
     MultiChoiceField,
@@ -2883,6 +2884,22 @@ class TestAppSchemaRecordDisplayNames:
 
         assert schema.item_display_name == "backup"
         assert schema.item_display_name_plural == "backups"
+
+    def test_record_names_stay_required_on_the_wire_schema(self) -> None:
+        """Constructor defaults must not weaken the OpenAPI required contract."""
+        schema = AppSchema.model_json_schema()
+
+        assert set(ITEM_DISPLAY_NAME_KEYS).issubset(schema["required"])
+        for key in ITEM_DISPLAY_NAME_KEYS:
+            assert "default" not in schema["properties"][key]
+
+    def test_entity_record_names_stay_required_on_the_wire_schema(self) -> None:
+        """Entity schemas keep the same wire-required contract as the app schema."""
+        schema = AppEntitySchema.model_json_schema()
+
+        assert set(ITEM_DISPLAY_NAME_KEYS).issubset(schema["required"])
+        for key in ITEM_DISPLAY_NAME_KEYS:
+            assert "default" not in schema["properties"][key]
 
     @pytest.mark.parametrize(
         "field_name", ["item_display_name", "item_display_name_plural"]

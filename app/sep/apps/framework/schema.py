@@ -1556,6 +1556,33 @@ ITEM_DISPLAY_NAME_KEYS = ("item_display_name", "item_display_name_plural")
 _VOWELS = frozenset("aeiou")
 
 
+def _require_item_display_names_in_json_schema(
+    json_schema: dict[str, Any],
+) -> None:
+    """Keep record-name fields required on the wire despite constructor defaults.
+
+    Both fields default to ``None`` at construction so authors (and ty) may omit
+    them; :func:`_fill_item_display_names` always writes a string before the
+    instance exists. Without this patch, Pydantic would drop them from
+    ``required`` and advertise a null default in OpenAPI, breaking the
+    generated client's non-nullable ``string`` contract.
+
+    Bound as ``json_schema_extra`` on :class:`AppSchema` and
+    :class:`AppEntitySchema` (mutating callable form).
+
+    :param json_schema: The JSON schema Pydantic built for the model; mutated
+        in place.
+    """
+    required = set(json_schema.get("required") or ())
+    required.update(ITEM_DISPLAY_NAME_KEYS)
+    json_schema["required"] = sorted(required)
+    properties = json_schema.get("properties") or {}
+    for key in ITEM_DISPLAY_NAME_KEYS:
+        prop = properties.get(key)
+        if isinstance(prop, dict):
+            prop.pop("default", None)
+
+
 def pluralize_item_display_name(singular: str) -> str:
     """Return a Django-style English plural for a mid-sentence record noun.
 
@@ -1649,12 +1676,15 @@ class AppEntitySchema(SchemaBaseModel):
         entity's screens. Stored in mid-sentence form so a consumer composing a
         label capitalises the first character itself. Defaults to this entity's
         own ``display_name`` — not the parent app's, and never inferred from
-        ``item_display_name_plural``.
+        ``item_display_name_plural``. Optional at construction (``None``
+        default); the before-validator always fills a string, and the OpenAPI
+        schema keeps the field required and non-nullable.
     :param item_display_name_plural: What **several** records of this entity are
         called (for example ``nodes``). Same mid-sentence convention. When the
         singular is declared, defaults by pluralising it; when both are
         omitted, defaults to this entity's own ``display_name``. Declare
-        explicitly for irregulars or forms the heuristic misses.
+        explicitly for irregulars or forms the heuristic misses. Optional at
+        construction under the same wire-required contract as the singular.
     :param description: Optional helper text for this entity. Defaults to
         ``None``.
     :param forms: Form sections for create (and edit when the UI supports it).
@@ -1670,8 +1700,11 @@ class AppEntitySchema(SchemaBaseModel):
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
-    item_display_name: NonEmptyStr
-    item_display_name_plural: NonEmptyStr
+    # Constructor defaults are None so authors/ty may omit either key; the
+    # before-validator fills strings, and json_schema_extra keeps both
+    # required and non-nullable on the wire.
+    item_display_name: NonEmptyStr = Field(default=None)
+    item_display_name_plural: NonEmptyStr = Field(default=None)
     description: NonEmptyStr | None = None
     forms: list[FormSection]
     list_view: ListView
@@ -1680,6 +1713,13 @@ class AppEntitySchema(SchemaBaseModel):
     )
     cardinality_rules: list[CardinalityRule] | None = None
     fail_when: list[FailRule] | None = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+        json_schema_extra=_require_item_display_names_in_json_schema,
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -1746,14 +1786,17 @@ class AppSchema(SchemaBaseModel):
         lowercase unless it opens with a proper noun — so a consumer composing a
         label capitalises the first character itself. Defaults to
         ``display_name``, and is never inferred from
-        ``item_display_name_plural``. Unlike the optional UI hints on this
-        model, both record names are required and non-nullable so the generated
-        client types them as ``string`` and no consumer needs a fallback.
+        ``item_display_name_plural``. Optional at construction (``None``
+        default); the before-validator always fills a string. Unlike the
+        optional UI hints on this model, both record names stay required and
+        non-nullable on the wire so the generated client types them as
+        ``string`` and no consumer needs a fallback.
     :param item_display_name_plural: What **several** of those records are
         called (for example ``backups``). Same mid-sentence convention. When
         the singular is declared, defaults by pluralising it; when both are
         omitted, defaults to ``display_name``. Declare explicitly for
-        irregulars or forms the heuristic misses.
+        irregulars or forms the heuristic misses. Optional at construction
+        under the same wire-required contract as the singular.
     :param description: Optional helper text describing the plugin's
         purpose. Defaults to ``None``.
     :param task_type: Optional task-type identifier used when creating tasks
@@ -1802,8 +1845,11 @@ class AppSchema(SchemaBaseModel):
 
     name: Annotated[NonEmptyStr, Field(pattern=_FIELD_NAME_PATTERN)]
     display_name: NonEmptyStr
-    item_display_name: NonEmptyStr
-    item_display_name_plural: NonEmptyStr
+    # Constructor defaults are None so authors/ty may omit either key; the
+    # before-validator fills strings, and json_schema_extra keeps both
+    # required and non-nullable on the wire.
+    item_display_name: NonEmptyStr = Field(default=None)
+    item_display_name_plural: NonEmptyStr = Field(default=None)
     description: NonEmptyStr | None = None
     task_type: NonEmptyStr | None = None
     forms: list[FormSection] = Field(default_factory=list)
@@ -1817,6 +1863,13 @@ class AppSchema(SchemaBaseModel):
     predecessors: list[ChainedPredecessor] | None = None
     related_apps: list[RelatedApp] | None = None
     task_statuses: list[TaskStatusDescriptor] | None = None
+
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="forbid",
+        arbitrary_types_allowed=True,
+        json_schema_extra=_require_item_display_names_in_json_schema,
+    )
 
     @model_validator(mode="before")
     @classmethod
