@@ -1013,7 +1013,7 @@ async def test_a_race_recovery_reuse_probes_the_minted_token(
 ):
     """Probe after minting onto the account a concurrent side-car created.
 
-    Losing the create race still reuses an account whose role SEP never set, so
+    Losing the create race still reuses an account whose role PMM Extensions never set, so
     the same FORBIDDEN diagnostic applies.
     """
     grafana_stub.queue(

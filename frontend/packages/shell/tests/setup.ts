@@ -18,7 +18,7 @@
 import '@testing-library/jest-dom/vitest';
 import { afterAll, afterEach, beforeAll } from 'vitest';
 import { cleanup } from '@testing-library/react';
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 
 import { server } from './msw-server';
 

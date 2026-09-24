@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Find the Python files SEP ships to executor hosts and check them against 3.9.
+"""Find the Python files PMM Extensions ships to executor hosts and check them against 3.9.
 
 Executor hosts run payloads under their own ``python3``, which can be as old as
 :data:`MINIMUM_HOST_PYTHON`, while the suite runs under 3.11. The guard in
@@ -56,24 +56,24 @@ MINIMUM_HOST_PYTHON = (3, 9)
 MINIMUM_HOST_PYTHON_VERSION = ".".join(map(str, MINIMUM_HOST_PYTHON))
 
 #: The environment variable naming the interpreter the load branch runs under.
-CHECK_PYTHON_ENV = "SEP_PAYLOAD_CHECK_PYTHON"
+CHECK_PYTHON_ENV = "EXTENSIONS_PAYLOAD_CHECK_PYTHON"
 
 #: The repo-relative globs naming host payloads by convention.
 PAYLOAD_GLOBS = (
-    "app/sep/apps/**/payload",
-    "app/sep/apps/**/*_payload",
-    "app/sep/apps/**/payloads/*.py",
-    "app/sep/sync/syncers/**/payload.py",
+    "app/extensions/apps/**/payload",
+    "app/extensions/apps/**/*_payload",
+    "app/extensions/apps/**/payloads/*.py",
+    "app/extensions/sync/syncers/**/payload.py",
     "app/tasks/**/payload.py",
 )
 
 #: The argv a payload that parses its arguments at import needs in order to load.
 LOAD_ARGV: Mapping[str, tuple[str, ...]] = {
-    "app/sep/apps/dipper/payloads/pcs-collect-pmm-mysql.py": (
+    "app/extensions/apps/dipper/payloads/pcs-collect-pmm-mysql.py": (
         "--list",
         "https://user:pass@payload-check.invalid/",
     ),
-    "app/sep/apps/dipper/payloads/pcs-collect-pmm-valkey.py": (
+    "app/extensions/apps/dipper/payloads/pcs-collect-pmm-valkey.py": (
         "--list",
         "https://user:pass@payload-check.invalid/",
     ),
@@ -195,7 +195,7 @@ def literal_payload_references(root: Path) -> list[tuple[Path, Path]]:
 def discover_host_payloads(
     root: Path, artifact_dirs: Sequence[Path] = ()
 ) -> list[Path]:
-    """Return every Python file SEP ships to executor hosts.
+    """Return every Python file PMM Extensions ships to executor hosts.
 
     The union of the conventional payload globs, the existing targets of literal
     ``payload_uri`` references, and the ``*.py`` files of each artifact directory,
@@ -400,7 +400,7 @@ def _interpreter_version(python: str) -> tuple[int, int]:
 def resolve_py39_interpreter() -> str | None:
     """Return the interpreter the load branch runs under, or ``None`` if absent.
 
-    ``$SEP_PAYLOAD_CHECK_PYTHON`` wins when set, and otherwise ``python3.9`` on
+    ``$EXTENSIONS_PAYLOAD_CHECK_PYTHON`` wins when set, and otherwise ``python3.9`` on
     ``PATH`` is used. Either way the interpreter must report
     :data:`MINIMUM_HOST_PYTHON`: a check silently run under a newer Python would
     pass the very files it exists to fail.

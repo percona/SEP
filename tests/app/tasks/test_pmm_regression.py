@@ -62,7 +62,7 @@ class TestScheduleAnnotationDetachedInstance:
         session has closed and expired the attribute, raising
         ``DetachedInstanceError`` (sync driver) or
         ``sqlalchemy.exc.MissingGreenlet`` (asyncpg) — the production
-        failure mode captured in the production sep.log traceback.
+        failure mode captured in the production extensions.log traceback.
         """
         task = await TaskManager.create(
             session,

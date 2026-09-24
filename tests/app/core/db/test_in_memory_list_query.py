@@ -51,7 +51,7 @@ _CHILD_TIMEOUT_SEC = 300
 
 #: Every activatable app package. Core sits below all three, so an import of any of
 #: them here would put the applier out of reach of the other two.
-_APP_PACKAGE_PREFIXES = ("app.inventory", "app.sep", "app.tasks")
+_APP_PACKAGE_PREFIXES = ("app.inventory", "app.extensions", "app.tasks")
 
 #: The applier under test, bound to the shared spec once for the whole suite —
 #: which is how a caller holds one.

@@ -41,7 +41,7 @@ describe('Vite backend proxy prefixes', () => {
     expect(proxy).toBeDefined();
     for (const prefix of NON_API_PREFIXES) {
       expect(proxy?.[prefix]).toMatchObject({
-        target: process.env.SEP_QA_BACKEND ?? 'http://127.0.0.1:18002',
+        target: process.env.EXTENSIONS_QA_BACKEND ?? 'http://127.0.0.1:18002',
         changeOrigin: true,
         cookieDomainRewrite: 'localhost',
       });

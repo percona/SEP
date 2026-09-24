@@ -107,7 +107,7 @@ class MintError(Exception):
 
 
 class TokenStateEnum(StrEnum):
-    """Name what Grafana answered about a token SEP already holds."""
+    """Name what Grafana answered about a token PMM Extensions already holds."""
 
     ACCEPTED = "accepted"
     REJECTED = "rejected"
@@ -214,7 +214,7 @@ def quiet_client_logging(api: RemoteAPI, floor: int) -> Generator[None]:
 
 
 async def validate_token(provider: GrafanaSDK, token: str) -> TokenStateEnum:
-    """Check what Grafana makes of a token SEP already holds.
+    """Check what Grafana makes of a token PMM Extensions already holds.
 
     The call is bounded independently of the client's own pool timeouts, so a
     stalled Grafana costs one probe rather than the whole start path. A 403 is
@@ -278,7 +278,7 @@ async def search_account(provider: GrafanaSDK) -> int | None:
 
 
 async def find_or_create_account(provider: GrafanaSDK) -> tuple[int, bool]:
-    """Return the id of SEP's service account, creating it when absent.
+    """Return the id of PMM Extensions' service account, creating it when absent.
 
     A refused creation is re-checked against a second lookup rather than
     reported: two side-cars starting together can both search before either
@@ -390,7 +390,7 @@ async def mint_with_retry(
     raise MintError(
         f"Could not mint a Grafana service-account token at {provider.endpoint} "
         f"after waiting {time.monotonic() - started:.1f}s (last failure: "
-        f"{last_failure}). SEP starts without Grafana-backed sign-in and "
+        f"{last_failure}). PMM Extensions starts without Grafana-backed sign-in and "
         "without the PMM syncer."
     )
 
@@ -404,7 +404,7 @@ def _fatal_mint_error(provider: RemoteAPI, error: HTTPException) -> MintError:
     """
     if error.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN}:
         return MintError(
-            f"Grafana at {provider.endpoint} rejected SEP's admin credential "
+            f"Grafana at {provider.endpoint} rejected PMM Extensions' admin credential "
             f"(HTTP {error.status_code}). Set GF_SECURITY_ADMIN_USER and "
             "GF_SECURITY_ADMIN_PASSWORD to Grafana's current admin login."
         )
@@ -482,7 +482,7 @@ def resolve_provider() -> GrafanaSDK | str | None:
 
 
 def warn_role_gap(subject: str) -> None:
-    """Warn that SEP's service account ranks below Admin in its org.
+    """Warn that PMM Extensions' service account ranks below Admin in its org.
 
     :param subject: What Grafana accepted, e.g. ``"persisted token"``.
     """
@@ -507,7 +507,7 @@ async def keep_persisted_token(provider: GrafanaSDK, token: str) -> bool:
     elif state is TokenStateEnum.UNREACHABLE:
         warn(
             f"Could not reach Grafana at {provider.endpoint} to revalidate "
-            "SEP's persisted token; using it unvalidated."
+            "PMM Extensions' persisted token; using it unvalidated."
         )
     return state is not TokenStateEnum.REJECTED
 

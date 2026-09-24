@@ -16,12 +16,12 @@
 
 """Dump the four whole-app OpenAPI specs the frontend codegen consumes.
 
-Writes canonical JSON for the ``main``, ``inventory``, ``tasks``, and ``sep``
+Writes canonical JSON for the ``main``, ``inventory``, ``tasks``, and ``extensions``
 apps to ``frontend/packages/api/specs/``. The top-level ``main`` spec is the
 core API only (``app.openapi()``), not the merged ``/api/openapi.json`` document.
 
 Run this outside pytest: sibling conftests inject routers into the process-global
-``sep_app`` at import time, so a spec computed inside the test process would
+``extensions_app`` at import time, so a spec computed inside the test process would
 depend on test-collection order.
 """
 
@@ -185,16 +185,16 @@ def _load_apps() -> dict[str, Any]:
     :return: The four whole-app objects keyed by spec name.
     """
     sys.path.insert(0, str(REPO_ROOT))
+    from app.extensions.main import extensions_app
     from app.inventory.main import inventory_app
     from app.main import app as main_app
-    from app.sep.main import sep_app
     from app.tasks.main import tasks_app
 
     return {
         "main": main_app,
         "inventory": inventory_app,
         "tasks": tasks_app,
-        "sep": sep_app,
+        "extensions": extensions_app,
     }
 
 

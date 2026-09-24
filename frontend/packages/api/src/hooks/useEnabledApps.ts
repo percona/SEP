@@ -17,7 +17,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../client';
-import type { components } from '../generated/sep';
+import type { components } from '../generated/extensions';
 
 /** Per-app entry returned by the public ``GET /api/apps/`` endpoint. */
 export interface EnabledApp {

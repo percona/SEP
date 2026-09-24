@@ -52,7 +52,7 @@ import DialogTitle from '@mui/material/DialogTitle';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import type { AppCapabilities, FieldValidationError } from '@sep/api';
+import type { AppCapabilities, FieldValidationError } from '@pmm-extensions/api';
 import { AlertOnFailField, ALERT_ON_FAIL_FIELD_NAME } from '../AlertOnFailField';
 import { ConditionalFieldSlot } from './ConditionalFieldSlot';
 import { useFieldPayloadCleanup } from './hooks/useConditionalField';

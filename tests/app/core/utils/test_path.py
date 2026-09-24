@@ -24,8 +24,8 @@ from app.core.utils.path import (
     to_payload_reference,
 )
 
-_PLUGIN_REL = "app/sep/plugins/mysql_backups/binlog_payload"
-_APPS_REL = "app/sep/apps/mysql_backups/binlog_payload"
+_PLUGIN_REL = "app/extensions/plugins/mysql_backups/binlog_payload"
+_APPS_REL = "app/extensions/apps/mysql_backups/binlog_payload"
 
 
 @pytest.fixture
@@ -141,13 +141,17 @@ class TestPayloadUri:
 
     def test_builds_reference_relative_to_base_dir(self, base_dir):
         """Assert the returned string is a file:// reference relative to BASE_DIR."""
-        anchor = str(base_dir / "app" / "sep" / "plugins" / "mysql_backups" / "spec.py")
+        anchor = str(
+            base_dir / "app" / "extensions" / "plugins" / "mysql_backups" / "spec.py"
+        )
         result = payload_uri(anchor, "binlog_payload")
         assert result == f"file://{_PLUGIN_REL}"
 
     def test_round_trips_through_resolver(self, base_dir):
         """Assert a payload_uri reference resolves back to the on-disk file."""
         payload_file = _write(base_dir / _PLUGIN_REL)
-        anchor = str(base_dir / "app" / "sep" / "plugins" / "mysql_backups" / "spec.py")
+        anchor = str(
+            base_dir / "app" / "extensions" / "plugins" / "mysql_backups" / "spec.py"
+        )
         reference = payload_uri(anchor, "binlog_payload")
         assert resolve_payload_reference(reference) == payload_file

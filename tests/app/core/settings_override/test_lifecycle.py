@@ -50,7 +50,7 @@ from app.core.settings_override.manager import SettingsOverrideManager
 from app.core.settings_override.models import SettingClassEnum, SettingOverride
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.utils import json_serializer
-from app.sep.config import ExtensionsSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.execution.executors.nomad import NomadExecutor
 from app.tasks.execution.nomad_lifecycle import NomadLifecycle
@@ -89,7 +89,7 @@ async def session_maker_fixture() -> AsyncGenerator[async_sessionmaker, None]:
 
 
 def _make_proxies() -> tuple[OverridableSettingsProxy, dict]:
-    """Construct an SEP proxy and a registry mapping for refresh tests."""
+    """Construct a PMM Extensions proxy and a registry mapping for refresh tests."""
     proxy: OverridableSettingsProxy = OverridableSettingsProxy(
         ExtensionsSettings, setting_class=ExtensionsSettings.__name__
     )
@@ -273,14 +273,16 @@ async def test_refresh_all_rolls_back_session_between_proxies(
     making the first proxy fail while asserting the second still picks up
     its row from the DB.
     """
-    sep_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
+    extensions_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
         ExtensionsSettings, setting_class=ExtensionsSettings.__name__
     )
     tasks_proxy: OverridableSettingsProxy = OverridableSettingsProxy(
         TasksSettings, setting_class=TasksSettings.__name__
     )
     registry = {
-        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(sep_proxy, ExtensionsSettings),
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+            extensions_proxy, ExtensionsSettings
+        ),
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(tasks_proxy, TasksSettings),
     }
     tasks_override = 7200
@@ -1062,7 +1064,7 @@ class TestFireBootCallbacks:
         callback must already have fired rather than being deferred to a fire
         step that never runs for an expired seed.
         """
-        sep_proxy, registry = _make_proxies()
+        extensions_proxy, registry = _make_proxies()
         registry[SettingClassEnum.TASKS_SETTINGS] = ProxyEntry(
             OverridableSettingsProxy(
                 TasksSettings, setting_class=TasksSettings.__name__
@@ -1072,7 +1074,7 @@ class TestFireBootCallbacks:
         override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         fired: list[SnapshotChange] = []
 
-        async def _publish_sep_then_hang(
+        async def _publish_extensions_then_hang(
             proxy: OverridableSettingsProxy,
             _session: AsyncSession,
             settings_cls: type,
@@ -1083,7 +1085,7 @@ class TestFireBootCallbacks:
 
         monkeypatch.setattr(
             "app.core.settings_override.lifecycle.publish_snapshot",
-            _publish_sep_then_hang,
+            _publish_extensions_then_hang,
         )
 
         seeded, pending = await asyncio.wait_for(
@@ -1101,7 +1103,7 @@ class TestFireBootCallbacks:
         try:
             assert seeded is False
             assert len(fired) == 1
-            assert sep_proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
+            assert extensions_proxy.CONNECTIVITY_CHECK_DEFAULT is override_value
         finally:
             if pending is not None and not pending.done():
                 pending.cancel()

@@ -82,10 +82,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       '@tanstack/react-query':
@@ -140,10 +140,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       '@tanstack/react-query':
@@ -186,10 +186,10 @@ importers:
 
   packages/apps/alters:
     dependencies:
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       react:
@@ -223,13 +223,13 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
-      '@sep/shared':
+      '@pmm-extensions/shared':
         specifier: workspace:*
         version: link:../../shared
       '@tanstack/react-query':
@@ -272,10 +272,10 @@ importers:
 
   packages/apps/backup_mongo:
     dependencies:
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       react:
@@ -324,10 +324,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       '@tanstack/react-query':
@@ -373,10 +373,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       cronstrue:
@@ -395,7 +395,7 @@ importers:
       '@emotion/styled':
         specifier: ^11.14.0
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7)
-      '@sep/test-utils':
+      '@pmm-extensions/test-utils':
         specifier: workspace:*
         version: link:../../test-utils
       '@tanstack/react-query':
@@ -449,10 +449,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       '@tanstack/react-query':
@@ -507,10 +507,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       '@tanstack/react-query':
@@ -562,10 +562,10 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../../framework
       '@tanstack/react-query':
@@ -614,7 +614,7 @@ importers:
       '@mui/material':
         specifier: ^7.3.7
         version: 7.3.11(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../../api
       '@xyflow/react':
@@ -630,7 +630,7 @@ importers:
       '@emotion/styled':
         specifier: ^11.14.0
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.14)(react@19.2.7))(@types/react@19.2.14)(react@19.2.7)
-      '@sep/test-utils':
+      '@pmm-extensions/test-utils':
         specifier: workspace:*
         version: link:../../test-utils
       '@tanstack/react-query':
@@ -714,7 +714,7 @@ importers:
       '@percona/percona-ui':
         specifier: ^1.0.15
         version: 1.0.16(8381e24a976fe4bd328f922073cb86ad)
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../api
       '@tanstack/react-query':
@@ -835,46 +835,46 @@ importers:
       '@percona/percona-ui':
         specifier: ^1.0.16
         version: 1.0.16(8381e24a976fe4bd328f922073cb86ad)
-      '@sep/alert-troubleshooting':
+      '@pmm-extensions/alert-troubleshooting':
         specifier: workspace:*
         version: link:../apps/alert_troubleshooting
-      '@sep/alerts':
+      '@pmm-extensions/alerts':
         specifier: workspace:*
         version: link:../apps/alerts
-      '@sep/alters':
+      '@pmm-extensions/alters':
         specifier: workspace:*
         version: link:../apps/alters
-      '@sep/api':
+      '@pmm-extensions/api':
         specifier: workspace:*
         version: link:../api
-      '@sep/atw':
+      '@pmm-extensions/atw':
         specifier: workspace:*
         version: link:../apps/atw
-      '@sep/backup-mongo':
+      '@pmm-extensions/backup-mongo':
         specifier: workspace:*
         version: link:../apps/backup_mongo
-      '@sep/dipper':
+      '@pmm-extensions/dipper':
         specifier: workspace:*
         version: link:../apps/dipper
-      '@sep/framework':
+      '@pmm-extensions/framework':
         specifier: workspace:*
         version: link:../framework
-      '@sep/inventory':
+      '@pmm-extensions/inventory':
         specifier: workspace:*
         version: link:../apps/inventory
-      '@sep/report':
+      '@pmm-extensions/report':
         specifier: workspace:*
         version: link:../apps/report
-      '@sep/shared':
+      '@pmm-extensions/shared':
         specifier: workspace:*
         version: link:../shared
-      '@sep/snippets':
+      '@pmm-extensions/snippets':
         specifier: workspace:*
         version: link:../apps/snippets
-      '@sep/tasks':
+      '@pmm-extensions/tasks':
         specifier: workspace:*
         version: link:../apps/tasks
-      '@sep/topology':
+      '@pmm-extensions/topology':
         specifier: workspace:*
         version: link:../apps/topology
       '@tanstack/react-query':

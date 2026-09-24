@@ -137,7 +137,7 @@ export const StreamError: Story = {
   parameters: {
     sseScripts: {
       '/stream-logs/sb-stream-error': (es: StoryEventSource) => {
-        es.emitNamed('sep-error', {
+        es.emitNamed('extensions-error', {
           detail: 'Upstream stream gateway returned 502 Bad Gateway.',
         });
       },
@@ -154,7 +154,7 @@ export const ExecutorGone: Story = {
   parameters: {
     sseScripts: {
       '/stream-logs/sb-executor-gone': (es: StoryEventSource) => {
-        es.emitNamed('sep-error', {
+        es.emitNamed('extensions-error', {
           code: 410,
           detail: {
             message: 'This run is no longer available in the task executor.',

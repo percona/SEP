@@ -19,18 +19,19 @@
  * Shared types for the snippets app frontend package.
  *
  * Mirrors the Pydantic API models defined in
- * `app/sep/plugins/snippets/models.py`.
+ * `app/extensions/plugins/snippets/models.py`.
  */
 
-import type { SepComponents } from '@sep/api';
+import type { ExtensionsComponents } from '@pmm-extensions/api';
 
-export type { SnippetExecutionRequest, SnippetExecutionResponse } from '@sep/framework';
+export type { SnippetExecutionRequest, SnippetExecutionResponse } from '@pmm-extensions/framework';
 
 /** Approval-status filter values, sourced from the generated API union. */
-export type SnippetApprovalFilter = SepComponents['schemas']['SnippetApprovalFilter'];
+export type SnippetApprovalFilter = ExtensionsComponents['schemas']['SnippetApprovalFilter'];
 
 /** Whole-dataset service-type facet backing the list filter's options. */
-export type SnippetServiceTypesResponse = SepComponents['schemas']['SnippetServiceTypesResponse'];
+export type SnippetServiceTypesResponse =
+  ExtensionsComponents['schemas']['SnippetServiceTypesResponse'];
 
 export interface SnippetResponse {
   filename: string;

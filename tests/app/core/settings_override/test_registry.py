@@ -46,9 +46,9 @@ from app.core.settings_override.registry import (
 )
 from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils.pydantic import field_with_metadata
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.inventory.config import InventorySettings
-from app.sep.config import ExtensionsSettings
-from app.sep.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 
 
@@ -271,7 +271,7 @@ def test_is_hot_reloadable_false_for_missing_field() -> None:
     assert is_hot_reloadable(ExtensionsSettings, "DOES_NOT_EXIST") is False
 
 
-def test_hot_field_names_sep_settings() -> None:
+def test_hot_field_names_extensions_settings() -> None:
     """Check that ``ExtensionsSettings`` ships the promoted HOT fields and toggles.
 
     Includes the endpoint and footer promotions and the ambient-SSO toggle.
@@ -306,7 +306,7 @@ def test_hot_field_names_tasks_settings() -> None:
     )
 
 
-def test_nested_overridable_field_names_sep_settings() -> None:
+def test_nested_overridable_field_names_extensions_settings() -> None:
     """Assert ``ExtensionsSettings`` exposes the refresh-session parent plus ``APP_DRAIN``."""
     assert nested_overridable_field_names(ExtensionsSettings) == frozenset(
         {"SESSION_REFRESH", "APP_DRAIN"}
@@ -374,14 +374,14 @@ def test_reload_classification_values() -> None:
         "DIAGNOSTICS_DELIVERY_INPUTS",
     ],
 )
-def test_sep_settings_marked_advanced(field_name: str) -> None:
-    """Assert the promoted SEP settings carry the advanced flag."""
+def test_extensions_settings_marked_advanced(field_name: str) -> None:
+    """Assert the promoted PMM Extensions settings carry the advanced flag."""
     assert is_advanced_field(ExtensionsSettings.model_fields[field_name]) is True
 
 
 @pytest.mark.parametrize("field_name", ["SYNC_REFRESH_TIME", "APPS", "DATABASE"])
-def test_sep_settings_not_marked_advanced(field_name: str) -> None:
-    """Assert SEP settings left basic do not carry the advanced flag (no over-marking)."""
+def test_extensions_settings_not_marked_advanced(field_name: str) -> None:
+    """Assert PMM Extensions settings left basic do not carry the advanced flag (no over-marking)."""
     assert is_advanced_field(ExtensionsSettings.model_fields[field_name]) is False
 
 

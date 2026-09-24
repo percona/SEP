@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Manage changelog fragments for the SEP project.
+"""Manage changelog fragments for the PMM Extensions project.
 
 Each PR with a user-facing change drops one or more small fragment files under
 ``changelog.d/`` instead of appending entries to ``CHANGELOG.md`` directly. This
@@ -962,7 +962,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="changelog",
-        description="Manage SEP changelog fragments under changelog.d/.",
+        description="Manage PMM Extensions changelog fragments under changelog.d/.",
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 

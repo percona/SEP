@@ -68,7 +68,7 @@ class SettingClassEnum(StrEnum):
     """Enumerate settings classes that may have HOT override rows.
 
     Members are the core-wired classes only. A settings class owned by an app
-    declares itself under ``app/sep/apps/<app>/`` and needs no member here.
+    declares itself under ``app/extensions/apps/<app>/`` and needs no member here.
 
     Members are in-process constants. The ``settingoverride.setting_class``
     column is a plain string whose stored token is derived by
@@ -79,7 +79,7 @@ class SettingClassEnum(StrEnum):
 
     1. Add a member here whose value matches the Pydantic class ``__name__``.
     2. Wire a ``ProxyEntry`` for the new class in the relevant service's
-       lifespan (``app/sep/main.py`` or ``app/tasks/main.py``).
+       lifespan (``app/extensions/main.py`` or ``app/tasks/main.py``).
     """
 
     EXTENSIONS_SETTINGS = "ExtensionsSettings"

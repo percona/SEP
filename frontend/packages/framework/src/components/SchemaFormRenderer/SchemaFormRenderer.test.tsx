@@ -31,11 +31,11 @@ import type { FormSection, RenderFieldOverride } from './types';
 
 const useAlertConfigMock = vi.fn();
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
   useAlertConfig: () => useAlertConfigMock(),
 }));
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mockedApi = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function renderWithProviders(ui: ReactNode) {

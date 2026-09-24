@@ -1,0 +1,62 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""Define the presentation bundle for the MongoDB Restores app.
+
+Section *membership* and *order* are declared on
+:class:`~app.extensions.apps.backup_mongo.restore.models.RestoreForm` (via
+``Ui(section=...)`` and field-declaration order); what lives here is the part the
+model cannot express: the section titles, the collapse metadata, the list columns,
+and the UI capability flags. These feed the derived ``GET /schema``.
+"""
+
+from app.extensions.apps.backup_mongo.models import BackupType
+from app.extensions.apps.framework.apps import Views
+from app.extensions.apps.framework.form_dsl import (
+    FormLayout,
+    SectionLayout,
+    TASK_SECTION_LAYOUT,
+)
+from app.extensions.apps.framework.schema import (
+    Capabilities,
+    Column,
+    default_columns,
+    EXECUTOR_HOST_COLUMN,
+    ListView,
+)
+from app.extensions.apps.shared.backups.columns import backup_type_column
+
+restore_views = Views(
+    layout=FormLayout(
+        sections=(
+            TASK_SECTION_LAYOUT,
+            SectionLayout(
+                key="RestoreOptions",
+                title="Restore Options",
+                collapsible=True,
+                collapsed_by_default=True,
+            ),
+        )
+    ),
+    list_view=ListView(
+        columns=default_columns(
+            EXECUTOR_HOST_COLUMN,
+            backup_type_column(BackupType.LABELS),
+            Column(key="backup_source", label="Backup Source"),
+        ),
+        default_sort="name",
+    ),
+    capabilities=Capabilities(chaining=True, scheduling=False),
+)

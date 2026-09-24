@@ -18,7 +18,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AppSchema } from '@sep/api';
+import type { AppSchema } from '@pmm-extensions/api';
 import { TasksListPage } from './TasksListPage';
 import { useTasksList, useTasksAppSchema } from './hooks';
 
@@ -39,7 +39,7 @@ vi.mock('./hooks', () => ({
 
 const schemaListViewMock = vi.fn();
 
-vi.mock('@sep/framework', () => ({
+vi.mock('@pmm-extensions/framework', () => ({
   SchemaListView: (props: {
     data: Record<string, unknown>[];
     onRowClick?: (row: Record<string, unknown>) => void;

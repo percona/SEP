@@ -47,7 +47,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-PAYLOAD_DIR = REPO_ROOT / "app/sep/apps/mysql_backups"
+PAYLOAD_DIR = REPO_ROOT / "app/extensions/apps/mysql_backups"
 
 
 class Dispatcher(NamedTuple):
@@ -73,8 +73,8 @@ def load_dispatcher() -> Dispatcher:
     :return: The selection enumerator and the spec builder.
     """
     sys.path.insert(0, str(REPO_ROOT))
-    from app.sep.apps.mysql_backups.payload_variants import selections
-    from tests.app.sep.apps.mysql_backups.variant_specs import spec_for
+    from app.extensions.apps.mysql_backups.payload_variants import selections
+    from tests.app.extensions.apps.mysql_backups.variant_specs import spec_for
 
     return Dispatcher(selections=selections, spec_for=spec_for)
 
@@ -235,7 +235,7 @@ print(returned)
 
 HOST_STEPS = """\
 Remaining steps need a database host with XtraBackup installed, and credentials
-for the object stores. Run each from the SEP UI so the dispatcher picks the
+for the object stores. Run each from the PMM Extensions UI so the dispatcher picks the
 variant, then confirm on the host:
 
   1. XtraBackup + Rsync only

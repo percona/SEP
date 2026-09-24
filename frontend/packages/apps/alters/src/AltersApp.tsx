@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { SchemaDrivenApp } from '@sep/framework';
+import { SchemaDrivenApp } from '@pmm-extensions/framework';
 import { getAltersExecuteActions, getAltersHistoryTaskNames } from './altersTaskDetail';
 import { APP_BASE_PATH, APP_NAME } from './routes';
 

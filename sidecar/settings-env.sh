@@ -91,7 +91,7 @@ fi
 
 # The migrate wait loops read EXTENSIONS_DB_HOST/EXTENSIONS_DB_PORT below, so a mounted host or
 # port has to seed them before their defaults apply -- and seeding all three
-# services off it is why a mounted host is not confined to SEP the way a mounted
+# services off it is why a mounted host is not confined to PMM Extensions the way a mounted
 # password is.
 if [[ -z ${EXTENSIONS__DATABASE__HOST:-} ]] && secret_file_supplies EXTENSIONS__DATABASE__HOST; then
     EXTENSIONS_DB_HOST="$(read_secret_file EXTENSIONS__DATABASE__HOST)"

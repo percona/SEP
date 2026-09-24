@@ -16,7 +16,7 @@
 """Define reusable model factories for tests.
 
 Core, cross-app factories only. A factory for an activatable app's model belongs
-in ``tests/app/sep/apps/<app>/factories.py``, beside that app's tests.
+in ``tests/app/extensions/apps/<app>/factories.py``, beside that app's tests.
 """
 
 from datetime import datetime, UTC
@@ -31,6 +31,12 @@ from app.core.auth.models import OAuthToken, UserRole
 from app.core.auth.providers.casdoor.models import CasdoorUser
 from app.core.auth.providers.casdoor.sdk import CasdoorSDK
 from app.core.auth.providers.grafana.models import GrafanaUser
+from app.extensions.inventory import (
+    CreatedNode,
+    CreatedSchema,
+    CreatedService,
+    CreatedTable,
+)
 from app.inventory.models import (
     HostSystemObservationWrite,
     NodeWrite,
@@ -40,7 +46,6 @@ from app.inventory.models import (
     SourceEnum,
     TableWrite,
 )
-from app.sep.inventory import CreatedNode, CreatedSchema, CreatedService, CreatedTable
 from app.tasks.models import (
     LogCaptureStatusEnum,
     Task,

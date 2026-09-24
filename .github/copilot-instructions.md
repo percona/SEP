@@ -1,16 +1,16 @@
 # Copilot Instructions
 
-This file gives GitHub Copilot the project context it needs when working on SEP. Both Copilot code review and the Copilot cloud agent read it, so it carries only guidance that applies whether Copilot is reviewing a diff or writing one. Per-area rules live under `.github/instructions/`; how to word a review lives in `.github/instructions/code-review.instructions.md`, which the cloud agent is excluded from.
+This file gives GitHub Copilot the project context it needs when working on PMM Extensions. Both Copilot code review and the Copilot cloud agent read it, so it carries only guidance that applies whether Copilot is reviewing a diff or writing one. Per-area rules live under `.github/instructions/`; how to word a review lives in `.github/instructions/code-review.instructions.md`, which the cloud agent is excluded from.
 
 ## Project shape
 
-SEP is a FastAPI application with three mounted sub-applications, each with its own database and Alembic migration chain. One Celery app (`app/celery.py`) and one beat process serve all three; each service contributes its schedules through its own seed module.
+PMM Extensions is a FastAPI application with three mounted sub-applications, each with its own database and Alembic migration chain. One Celery app (`app/celery.py`) and one beat process serve all three; each service contributes its schedules through its own seed module.
 
 - `app/inventory/` — nodes, services, schemas, tables; mounted at `/api/inventory`.
 - `app/tasks/` — task execution, the Nomad and Celery executors, periodic tasks; mounted at `/api/tasks`.
-- `app/sep/` — the SEP API gateway, OAuth, apps; mounted at `/`. It serves the React SPA's static assets, not server-rendered pages.
+- `app/extensions/` — the PMM Extensions API gateway, OAuth, apps; mounted at `/`. It serves the React SPA's static assets, not server-rendered pages.
 
-SEP apps are FastAPI routers under `app/sep/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
+PMM Extensions apps are FastAPI routers under `app/extensions/apps/<name>/` with `routes.py`, `deps.py`, and optional `models.py`. `Annotated[..., Depends(...)]` aliases live in `deps.py`.
 
 The UI is **API-first + React** — see `api-first.instructions.md` for rules that apply when a PR touches the API gateway, app schemas, or `frontend/packages/`. The server-rendered Jinja2 layer has been removed; the only Jinja left renders the report PDF.
 

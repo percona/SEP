@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Compute beat-faithful fire times for SEP's schedule models.
+"""Compute beat-faithful fire times for PMM Extensions' schedule models.
 
 Every time reported here comes from the schedule object Celery beat itself
 consults: ``celery.schedules.schedule`` for an interval,
@@ -50,7 +50,7 @@ NEXT_RUNS_PREVIEW_COUNT: Final = 3
 
 #: The zone an interval schedule is defined in. An interval's cadence is an
 #: absolute :class:`~datetime.timedelta` with no wall-clock anchor, so it has no
-#: zone of its own and every timestamp SEP reports for it is UTC.
+#: zone of its own and every timestamp PMM Extensions reports for it is UTC.
 INTERVAL_TIMEZONE: Final = "UTC"
 
 
@@ -133,8 +133,8 @@ def next_run_times(
     ``last_run_at`` to real now and yields the same fire time every time, and
     its failure paths need a ``Session``, so the rules are mirrored here rather
     than reused. ``ModelEntry``'s remaining behaviour is deliberately omitted:
-    the ``one_off`` branch (SEP never sets the column), ``expires`` handling
-    (SEP bounds dispatch, not the schedule), and disabling a schedule that fails
+    the ``one_off`` branch (PMM Extensions never sets the column), ``expires`` handling
+    (PMM Extensions bounds dispatch, not the schedule), and disabling a schedule that fails
     to build (validation upstream makes it unreachable).
 
     An already-due schedule fires at ``now``, so the first run it reports is

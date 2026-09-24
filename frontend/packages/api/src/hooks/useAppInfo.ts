@@ -24,7 +24,7 @@ export interface AppInfo {
   footer_text: string;
 }
 
-export const APP_INFO_QUERY_KEY = ['sep', 'app-info'] as const;
+export const APP_INFO_QUERY_KEY = ['extensions', 'app-info'] as const;
 
 /**
  * Fetches shell metadata for the sidebar footer (`footer_text`), rendered

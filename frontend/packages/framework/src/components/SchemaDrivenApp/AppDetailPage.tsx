@@ -51,10 +51,10 @@ import {
   useAppTasks,
   type DetailSection,
   type ListView,
-  type SepComponents,
+  type ExtensionsComponents,
   type AppEntitySchema,
   type AppSchema,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 import { resolvePath } from '../../utils/resolvePath';
 import { ActionErrorAlert, useActionError } from '../ActionErrorAlert';
 import {
@@ -359,7 +359,7 @@ function DetailViewSectionCard({
 function ConnectivityWarningAlert({
   warning,
 }: {
-  warning: SepComponents['schemas']['framework__ConnectivityWarning'];
+  warning: ExtensionsComponents['schemas']['framework__ConnectivityWarning'];
 }) {
   const [logOpen, setLogOpen] = useState(false);
   const message = warning.message || 'Connectivity check returned a warning for this task.';
@@ -466,7 +466,7 @@ function OverviewTab({
         typeof connectivityWarning === 'object' && (
           <ConnectivityWarningAlert
             warning={
-              connectivityWarning as SepComponents['schemas']['framework__ConnectivityWarning']
+              connectivityWarning as ExtensionsComponents['schemas']['framework__ConnectivityWarning']
             }
           />
         )}
