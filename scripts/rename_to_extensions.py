@@ -958,7 +958,7 @@ PYTHON_PATHS = re.compile(r"\.py$")
 
 
 class UnsupportedImportError(ValueError):
-    """An import the rename cannot rewrite without changing the code around it."""
+    """Signal an import the rename cannot rewrite without changing the code around it."""
 
 
 def package_dirs(rename_map: RenameMap) -> dict[str, str]:

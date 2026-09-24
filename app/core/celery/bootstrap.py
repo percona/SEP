@@ -105,7 +105,7 @@ TASK_PREFIX = "app.extensions."
 
 
 class PreRenameScheduleConflictError(RuntimeError):
-    """A schedule is stored under both its names, and both have fired."""
+    """Signal a schedule stored under both its names that has fired under both."""
 
 
 def _has_run(row: PeriodicTask) -> bool:
@@ -135,13 +135,13 @@ def _move_task_path(value: object) -> object:
     return value
 
 
-def _moved_kwargs(kwargs: str | None) -> str | None:
+def _moved_kwargs(kwargs: str) -> str | None:
     """Return a row's JSON keyword arguments with their task paths moved.
 
     :param kwargs: The stored keyword arguments, a JSON object.
     :return: The rewritten JSON, or ``None`` when nothing in it moves.
     """
-    if not kwargs or PRE_RENAME_TASK_PREFIX not in kwargs:
+    if PRE_RENAME_TASK_PREFIX not in kwargs:
         return None
     try:
         decoded = json.loads(kwargs)
@@ -216,7 +216,7 @@ def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> in
             if row.task.startswith(PRE_RENAME_TASK_PREFIX):
                 row.task = TASK_PREFIX + row.task.removeprefix(PRE_RENAME_TASK_PREFIX)
                 changed = True
-            if (kwargs := _moved_kwargs(row.kwargs)) is not None:
+            if row.kwargs and (kwargs := _moved_kwargs(str(row.kwargs))) is not None:
                 row.kwargs = kwargs
                 changed = True
             moved += changed
