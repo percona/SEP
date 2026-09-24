@@ -82,3 +82,35 @@ def test_moves_every_persisted_path_forward_and_back(tasks_alembic_config):
     command.downgrade(cfg, _PRE_MOVE_REVISION)
 
     assert _stored(sync_url) == (builder, data)
+
+
+def test_leaves_user_data_that_merely_contains_the_package_name(tasks_alembic_config):
+    """Move only the defined fields, and only where they start with the package."""
+    cfg, sync_url = tasks_alembic_config
+    command.upgrade(cfg, _PRE_MOVE_REVISION)
+    data = {
+        "callable": f"{PRE_RENAME_MODULE}.apps.inventory.sync.run",
+        "payload": f"file://{PRE_RENAME_PACKAGE}/apps/archives/payload",
+        "url": "https://myapp.sep.example/api",
+        "input": "/srv/myapp/sep/input",
+        f"{PRE_RENAME_MODULE}.key": f"{PRE_RENAME_PACKAGE}/value",
+        "meta": {"callable": f"{PRE_RENAME_MODULE}.nested"},
+    }
+    builder = "myapp.sep.alerts:build"
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql(_INSERT_TASK, ("user task", json.dumps(data), builder))
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _MOVE_REVISION)
+
+    assert _stored(sync_url) == (
+        builder,
+        {
+            **data,
+            "callable": "app.extensions.apps.inventory.sync.run",
+            "payload": "file://app/extensions/apps/archives/payload",
+        },
+    )

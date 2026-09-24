@@ -25,6 +25,9 @@ Read through the new name alone, that database would look empty and have every
 revision replayed over tables it already holds. No revision can do the rename,
 because Alembic reads the version table before it runs any, so ``env.py`` does
 it first, on the connection it is about to migrate.
+
+The move is forward-only. A downgrade leaves the table under its new name, so
+downgrading across the rename to the release before it is unsupported.
 """
 
 from sqlalchemy import inspect, text

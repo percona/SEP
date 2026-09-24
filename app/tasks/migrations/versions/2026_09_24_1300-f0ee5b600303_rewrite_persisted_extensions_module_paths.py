@@ -25,16 +25,23 @@ three that revision ``b74f05a17c8d`` rewrote when the package's ``plugins``
 directory became ``apps``, for the same reason: each is resolved at runtime.
 ``Task.alert_detail_builder`` is a ``module:attr`` path imported when an
 archiver alert fires, ``data.callable`` is imported by the Celery executor, and
-the ``file://`` payload URIs in ``Task.data`` are read on every dispatch.
+the ``file://`` URI in ``data.payload`` is read on every dispatch.
+
+Only those three fields move, and only where the value starts with the package:
+``app.sep.`` for the two import paths, ``file://app/sep/`` for the payload,
+which revision ``13e897d11734`` made relative to the repository. Anything else
+in ``Task.data``, including a URL or a path that merely contains the package's
+name, is the user's and is left as stored.
 
 Startup seeding already rewrites the ``data`` of the system tasks it owns, but
-not the builder, and not a user task created from an app. Both replacement pairs
-are frozen literals, so the revision keeps meaning the same thing whatever the
+not the builder, and not a user task created from an app. The prefixes are
+frozen literals, so the revision keeps meaning the same thing whatever the
 package is called on the release that executes it.
-"""
 
-import json
-from collections.abc import Sequence
+Downgrade across the rename is unsupported. The downgrade restores these rows,
+but the release before the rename cannot run on the database regardless: the
+Extensions track's version table keeps its new name.
+"""
 
 import sqlalchemy as sa
 from alembic import op
@@ -52,19 +59,33 @@ _TASK = sa.table(
     sa.column("data", sa.JSON),
 )
 
-_REPLACEMENTS = (
-    ("app.sep.", "app.extensions."),
-    ("app/sep/", "app/extensions/"),
-)
+_OLD_MODULE = "app.sep."
+_NEW_MODULE = "app.extensions."
+_OLD_PAYLOAD = "file://app/sep/"
+_NEW_PAYLOAD = "file://app/extensions/"
 
 
-def _rewrite_persisted_paths(replacements: Sequence[tuple[str, str]]) -> None:
-    """Apply ``(old, new)`` substring swaps to every task's persisted paths.
+def _moved(value: object, source: str, target: str) -> object:
+    """Return ``value`` with its leading ``source`` replaced by ``target``.
 
-    Iterates rows through the bound connection so the substitution is identical
-    on PostgreSQL and SQLite, writing back only the rows that actually change.
+    :param value: A stored field value.
+    :param source: The prefix the value must start with to move.
+    :param target: The prefix to store instead.
+    :return: The moved string, or ``value`` unchanged.
+    """
+    if isinstance(value, str) and value.startswith(source):
+        return target + value.removeprefix(source)
+    return value
 
-    :param replacements: Ordered ``(old, new)`` substring pairs to apply.
+
+def _rewrite_persisted_paths(module: tuple[str, str], payload: tuple[str, str]) -> None:
+    """Move every task's import paths and payload reference between two prefixes.
+
+    Iterates rows through the bound connection so the change is identical on
+    PostgreSQL and SQLite, writing back only the rows that actually change.
+
+    :param module: The ``(source, target)`` dotted-path prefixes.
+    :param payload: The ``(source, target)`` ``file://`` reference prefixes.
     """
     bind = op.get_bind()
     rows = bind.execute(
@@ -72,24 +93,16 @@ def _rewrite_persisted_paths(replacements: Sequence[tuple[str, str]]) -> None:
     ).all()
     for row in rows:
         values = {}
-
-        builder = row.alert_detail_builder
-        if builder is not None:
-            rewritten = builder
-            for old, new in replacements:
-                rewritten = rewritten.replace(old, new)
-            if rewritten != builder:
-                values["alert_detail_builder"] = rewritten
-
-        data = row.data
-        if data is not None:
-            serialized = data if isinstance(data, str) else json.dumps(data)
-            rewritten = serialized
-            for old, new in replacements:
-                rewritten = rewritten.replace(old, new)
-            if rewritten != serialized:
-                values["data"] = json.loads(rewritten)
-
+        builder = _moved(row.alert_detail_builder, *module)
+        if builder != row.alert_detail_builder:
+            values["alert_detail_builder"] = builder
+        if isinstance(row.data, dict):
+            data = dict(row.data)
+            for key, prefixes in (("callable", module), ("payload", payload)):
+                if key in data:
+                    data[key] = _moved(data[key], *prefixes)
+            if data != row.data:
+                values["data"] = data
         if values:
             bind.execute(
                 sa.update(_TASK).where(_TASK.c.id == row.id).values(**values)
@@ -98,9 +111,13 @@ def _rewrite_persisted_paths(replacements: Sequence[tuple[str, str]]) -> None:
 
 def upgrade() -> None:
     """Point persisted paths at the ``app/extensions`` package."""
-    _rewrite_persisted_paths(_REPLACEMENTS)
+    _rewrite_persisted_paths(
+        (_OLD_MODULE, _NEW_MODULE), (_OLD_PAYLOAD, _NEW_PAYLOAD)
+    )
 
 
 def downgrade() -> None:
     """Point persisted paths back at the ``app/sep`` package."""
-    _rewrite_persisted_paths([(new, old) for old, new in _REPLACEMENTS])
+    _rewrite_persisted_paths(
+        (_NEW_MODULE, _OLD_MODULE), (_NEW_PAYLOAD, _OLD_PAYLOAD)
+    )

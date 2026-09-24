@@ -1,6 +1,6 @@
 # PMM Extensions — Nomad Driver and Deployment Configuration
 
-Customer-facing reference for security and cloud architects reviewing how **HashiCorp Nomad** is deployed and used by **PMM Extensions**. This document describes the **Percona GAS automation** deployment (`nomad.yaml` / `extensions.yaml` in the GAS automation repository) and how PMM Extensions consumes Nomad at runtime.
+Customer-facing reference for security and cloud architects reviewing how **HashiCorp Nomad** is deployed and used by **PMM Extensions**. This document describes the **Percona GAS automation** deployment (`nomad.yaml` / `sep.yaml` in the GAS automation repository) and how PMM Extensions consumes Nomad at runtime.
 
 **Related:** [PMM Extensions Task Execution DFD](pmm-extensions-task-execution-dfd/README.md) (application data flows and command controls).
 **Security sign-off:** [security-review-checklist.md](pmm-extensions-task-execution-dfd/security-review-checklist.md) §8 before customer delivery.

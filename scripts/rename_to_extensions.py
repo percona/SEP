@@ -50,6 +50,7 @@ work-tree is this checkout.
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import shutil
@@ -99,12 +100,15 @@ class Rule:
     :param pattern: The compiled pattern to replace.
     :param replacement: The replacement string or function.
     :param prose: Whether the rule rewrites prose, skipped in :data:`PROSE_ONLY_PATHS`.
+    :param generic: Whether the rule derives a name from the stem alone rather
+        than from a mapped shape, so it never applies inside an external URL.
     """
 
     row: str
     pattern: re.Pattern[str]
     replacement: Replacement
     prose: bool = False
+    generic: bool = False
 
 
 @dataclass
@@ -612,6 +616,9 @@ def _fescope(rename_map: RenameMap) -> list[Rule]:
     ]
 
 
+_GENERATED_SUFFIXES = "json|ts"
+"""File suffixes of the API spec and client generated under the package's name."""
+
 _STRING_METHODS = (
     "join|split|rsplit|strip|lstrip|rstrip|replace|encode|decode|startswith|endswith|"
     "lower|upper|format|length|partition|rpartition|count|find|index"
@@ -622,7 +629,10 @@ def _pkg(rename_map: RenameMap) -> list[Rule]:
     """Rename package paths and module names, then every identifier built on the stem.
 
     The stem pair is the last path segment of the row's first item. Identifier
-    components follow the case of the component they replace.
+    components follow the case of the component they replace. A bare ``sep.``
+    is renamed only as the stem of the package's generated API spec and client;
+    as a Python name it is renamed by :func:`rebind_package_imports`, where an
+    import binds it to the package, since elsewhere it is a separator variable.
 
     :param rename_map: The parsed rename map.
     :return: The ``pkg`` row's rules.
@@ -653,44 +663,49 @@ def _pkg(rename_map: RenameMap) -> list[Rule]:
             rf"\g<1>{new}\g<2>",
         ),
         Rule("pkg", bounded(old_mount), new_mount),
-        Rule("pkg", re.compile(rf"(?<=/){old}(?=['\"`])"), new),
         Rule(
             "pkg",
-            re.compile(rf"(?<![\w.]){upper}(?=\s*=(?!=))|(?<=\.){upper}(?![\w-])"),
-            new.upper(),
-        ),
-        Rule(
-            "pkg",
-            re.compile(rf"{no_alnum_before}{upper}(?=_)|(?<=_){upper}{no_alnum_after}"),
-            new.upper(),
-        ),
-        Rule("pkg", re.compile(rf"(?<![A-Za-z]){upper}(?=[A-Z][a-z])"), camel_new),
-        Rule(
-            "pkg",
-            re.compile(
-                rf"(?<![A-Za-z]){camel_old}(?=[A-Z_])|(?<=[a-z0-9]){camel_old}(?=[A-Z_]|{no_alnum_after})"
-            ),
-            camel_new,
-        ),
-        Rule("pkg", re.compile(rf"(?<![A-Za-z0-9$]){old}(?=[A-Z])"), new),
-        Rule(
-            "pkg",
-            re.compile(
-                rf"{no_alnum_before}{old}(?=_[A-Za-z0-9])|(?<=_){old}{no_alnum_after}"
-            ),
+            re.compile(rf"(?<![\w.-]){old}(?=\.(?:{_GENERATED_SUFFIXES})\b)"),
             new,
+            generic=True,
         ),
-        Rule(
-            "pkg",
-            re.compile(
-                rf"{no_alnum_before}{old}(?=-[A-Za-z])|(?<=[A-Za-z0-9]-){old}(?![\w-])"
-            ),
-            new,
-        ),
-        Rule(
-            "pkg",
-            re.compile(rf"(?<![\w.]){old}\.(?!(?:{_STRING_METHODS})\b)(?=[A-Za-z])"),
-            f"{new}.",
+        *(
+            Rule("pkg", pattern, replacement, generic=True)
+            for pattern, replacement in [
+                (re.compile(rf"(?<=/){old}(?=['\"`])"), new),
+                (
+                    re.compile(
+                        rf"(?<![\w.]){upper}(?=\s*=(?!=))|(?<=\.){upper}(?![\w-])"
+                    ),
+                    new.upper(),
+                ),
+                (
+                    re.compile(
+                        rf"{no_alnum_before}{upper}(?=_)|(?<=_){upper}{no_alnum_after}"
+                    ),
+                    new.upper(),
+                ),
+                (re.compile(rf"(?<![A-Za-z]){upper}(?=[A-Z][a-z])"), camel_new),
+                (
+                    re.compile(
+                        rf"(?<![A-Za-z]){camel_old}(?=[A-Z_])|(?<=[a-z0-9]){camel_old}(?=[A-Z_]|{no_alnum_after})"
+                    ),
+                    camel_new,
+                ),
+                (re.compile(rf"(?<![A-Za-z0-9$]){old}(?=[A-Z])"), new),
+                (
+                    re.compile(
+                        rf"{no_alnum_before}{old}(?=_[A-Za-z0-9])|(?<=_){old}{no_alnum_after}"
+                    ),
+                    new,
+                ),
+                (
+                    re.compile(
+                        rf"{no_alnum_before}{old}(?=-[A-Za-z])|(?<=[A-Za-z0-9]-){old}(?![\w-])"
+                    ),
+                    new,
+                ),
+            ]
         ),
     ]
 
@@ -711,25 +726,22 @@ def _display(rename_map: RenameMap) -> list[Rule]:
             re.compile(rf"{re.escape(name)}(?: \({abbreviation}\))?"),
             new,
             prose=True,
+            generic=True,
         )
         for name in long_names
     ]
     word = rf"(?<![\w./-]){abbreviation}(?![\w/])"
     rules += [
-        Rule("display", re.compile(rf"\b([Aa])n {word}"), rf"\g<1> {new}", prose=True),
-        Rule(
-            "display",
-            re.compile(rf"{word}(['\u2019])s\b"),
-            lambda match: f"{new}{match.group(1)}",
-            prose=True,
-        ),
-        Rule(
-            "display",
-            re.compile(rf"(?<![\w./-]){abbreviation}-(?=[a-z])"),
-            f"{new} ",
-            prose=True,
-        ),
-        Rule("display", re.compile(rf"{word}(?!-)"), new, prose=True),
+        Rule("display", pattern, replacement, prose=True, generic=True)
+        for pattern, replacement in [
+            (re.compile(rf"\b([Aa])n {word}"), rf"\g<1> {new}"),
+            (
+                re.compile(rf"{word}(['\u2019])s\b"),
+                lambda match: f"{new}{match.group(1)}",
+            ),
+            (re.compile(rf"(?<![\w./-]){abbreviation}-(?=[a-z])"), f"{new} "),
+            (re.compile(rf"{word}(?!-)"), new),
+        ]
     ]
     return rules
 
@@ -863,6 +875,10 @@ def active_protections(rename_map: RenameMap) -> dict[str, re.Pattern[str]]:
 _MASK = "\x00{}\x00"
 _IDENTIFIER = re.compile(r"[A-Za-z_$][\w$]*")
 
+EXTERNAL_URLS = "external URLs (generic rules only)"
+_URL = re.compile(r"\b[A-Za-z][\w+.-]*://[^\s'\"`<>()\[\]{}\\]+")
+"""A URL, which the generic rules leave alone unless a mapped rule renamed it first."""
+
 
 def rewrite(
     text: str,
@@ -872,6 +888,10 @@ def rewrite(
     prose: bool,
 ) -> tuple[str, Counter[str], Counter[str]]:
     """Apply the rules to one file's text.
+
+    The mapped rules run first. Before the first generic rule, every URL still
+    carrying the stem is masked too, so a name derived from the stem alone never
+    lands inside an address the map does not list.
 
     :param text: The original content.
     :param rules: The ordered rules.
@@ -890,12 +910,21 @@ def rewrite(
 
         return _mask
 
+    def mask_url(match: re.Match[str]) -> str:
+        if "sep" not in match.group().lower():
+            return match.group()
+        return mask(EXTERNAL_URLS)(match)
+
     for category, pattern in protections.items():
         text = pattern.sub(mask(category), text)
     counts: Counter[str] = Counter()
+    urls_masked = False
     for rule in rules:
         if rule.prose and not prose:
             continue
+        if rule.generic and not urls_masked:
+            text = _URL.sub(mask_url, text)
+            urls_masked = True
         text = rule.pattern.sub(_counting(rule, counts), text)
     text = re.sub("\x00(\\d+)\x00", lambda match: masked[int(match.group(1))], text)
     return text, counts, protected
@@ -924,51 +953,293 @@ def _counting(rule: Rule, counts: Counter[str]) -> Callable[[re.Match[str]], str
 HISTORY_PATHS = re.compile(r"(^|/)migrations/versions/[^/]+\.py$")
 """Revision scripts: history, whose only edit is the module path it imports from."""
 
-_HISTORY_IMPORT = re.compile(
-    r"^from (?P<module>[\w.]+) import (?P<names>\([^)]*\)|[^\n]+)$", re.MULTILINE
-)
+PYTHON_PATHS = re.compile(r"\.py$")
+"""Python sources, whose imports are parsed rather than matched."""
+
+
+class UnsupportedImportError(ValueError):
+    """An import the rename cannot rewrite without changing the code around it."""
+
+
+def package_dirs(rename_map: RenameMap) -> dict[str, str]:
+    """Return old -> new for each moved package directory.
+
+    :param rename_map: The parsed map.
+    :return: The ``pkg`` row's application and test package paths.
+    """
+    return dict(rename_map.pair("pkg", index) for index in (0, 2))
+
+
+def _import_base(path: str, level: int, module: str | None) -> str:
+    """Return the directory a ``from`` import's module resolves to.
+
+    :param path: The importing file, relative to the repository root.
+    :param level: How many leading dots the import has.
+    :param module: The module after the dots, if any.
+    :return: The repository-relative directory, or ``""`` above the root.
+    """
+    parts: list[str] = []
+    if level:
+        parent = Path(path).parent.parts
+        if level - 1 > len(parent):
+            return ""
+        parts = list(parent[: len(parent) - level + 1])
+    if module:
+        parts += module.split(".")
+    return "/".join(parts)
+
+
+def _package_name(
+    path: str, node: ast.ImportFrom, name: str, packages: dict[str, str]
+) -> str | None:
+    """Return the new name of a moved package a ``from`` import binds by name.
+
+    :param path: The importing file.
+    :param node: The import.
+    :param name: One imported name.
+    :param packages: Old -> new for each moved package directory.
+    :return: The package's new name, or ``None`` when ``name`` is not one.
+    """
+    target = packages.get(f"{_import_base(path, node.level, node.module)}/{name}")
+    return None if target is None else target.rsplit("/", 1)[-1]
+
+
+@dataclass(frozen=True, slots=True)
+class _Edit:
+    """Replace one span of a parsed source, located as :mod:`ast` locates it.
+
+    :param start: The span's first ``(line, UTF-8 byte column)``.
+    :param end: The ``(line, UTF-8 byte column)`` just past the span.
+    :param text: The replacement.
+    """
+
+    start: tuple[int, int]
+    end: tuple[int, int]
+    text: str
+
+
+def _apply_edits(text: str, edits: list[_Edit]) -> str:
+    """Apply span edits located by line and UTF-8 byte column.
+
+    :param text: The source the edits were located in.
+    :param edits: Non-overlapping edits.
+    :return: The edited source.
+    """
+    lines = text.splitlines(keepends=True)
+    starts = [0]
+    for line in lines:
+        starts.append(starts[-1] + len(line))
+
+    def offset(position: tuple[int, int]) -> int:
+        line, column = position
+        return starts[line - 1] + len(
+            lines[line - 1].encode("utf-8")[:column].decode("utf-8")
+        )
+
+    for edit in sorted(edits, key=lambda edit: edit.start, reverse=True):
+        text = text[: offset(edit.start)] + edit.text + text[offset(edit.end) :]
+    return text
+
+
+def _name_edit(text: str, lineno: int, column: int, old: str, new: str) -> _Edit:
+    """Return the edit renaming one name token, checked against the source.
+
+    :param text: The source.
+    :param lineno: The token's line.
+    :param column: The token's UTF-8 byte column.
+    :param old: The name expected at that position.
+    :param new: The name to write instead.
+    :return: The edit.
+    :raises UnsupportedImportError: When the source there is not ``old``.
+    """
+    line = text.splitlines()[lineno - 1].encode("utf-8")
+    found = line[column : column + len(old.encode("utf-8"))].decode("utf-8")
+    if found != old:
+        raise UnsupportedImportError(
+            f"line {lineno}: expected {old!r} at column {column}, found {found!r}"
+        )
+    return _Edit((lineno, column), (lineno, column + len(old.encode("utf-8"))), new)
+
+
+def rebind_package_imports(
+    path: str, text: str, packages: dict[str, str]
+) -> tuple[str, int]:
+    """Rename a moved package imported by name, and every use of its binding.
+
+    ``from app import sep`` binds the package itself, so no module-path rule
+    sees it, and the ``sep.x`` uses after it look like any separator variable's.
+    The import resolves the name, relative forms against the file's own
+    location, so only a binding of the package is renamed. A binding without an
+    alias is renamed wherever the code names it; one with an alias keeps it,
+    and only the imported name changes.
+
+    :param path: The file's path, which a relative import resolves against.
+    :param text: The file's content.
+    :param packages: Old -> new for each moved package directory.
+    :return: The rewritten content and the number of names changed.
+    :raises UnsupportedImportError: When the binding is also a parameter name,
+        whose uses cannot be told apart from the package's.
+    """
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return text, 0
+    edits = []
+    rebound: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        for alias in node.names:
+            new = _package_name(path, node, alias.name, packages)
+            if new is None:
+                continue
+            edits.append(
+                _name_edit(text, alias.lineno, alias.col_offset, alias.name, new)
+            )
+            if alias.asname is None:
+                rebound[alias.name] = new
+    for node in ast.walk(tree):
+        if isinstance(node, ast.arg) and node.arg in rebound:
+            raise UnsupportedImportError(
+                f"line {node.lineno}: {node.arg!r} is both the imported package "
+                "and a parameter"
+            )
+        if isinstance(node, ast.Name) and node.id in rebound:
+            edits.append(
+                _name_edit(
+                    text, node.lineno, node.col_offset, node.id, rebound[node.id]
+                )
+            )
+    return _apply_edits(text, edits), len(edits)
+
+
+def _history_from_import(
+    path: str,
+    node: ast.ImportFrom,
+    segment: str,
+    rules: list[Rule],
+    protections: dict[str, re.Pattern[str]],
+    packages: dict[str, str],
+) -> str | None:
+    """Return a revision's ``from`` import pointed at the moved modules, if it changes.
+
+    :param path: The revision script.
+    :param node: The import.
+    :param segment: The import's source text.
+    :param rules: The ordered rules.
+    :param protections: The spans to mask.
+    :param packages: Old -> new for each moved package directory.
+    :return: The new statement, or ``None`` when nothing it names moved.
+    """
+    roots = {old.split("/")[0] for old in packages}
+    if not node.level and (node.module or "").split(".")[0] not in roots:
+        return None
+    dots, module = "." * node.level, node.module or ""
+    head = rename_path(f"from {dots}{module} import", rules, protections)
+    changed = head != f"from {dots}{module} import"
+    bindings = []
+    for alias in node.names:
+        renamed = _package_name(path, node, alias.name, packages) or rename_path(
+            alias.name, rules, protections
+        )
+        changed |= renamed != alias.name
+        bound = alias.asname or (alias.name if renamed != alias.name else "")
+        bindings.append(f"{renamed} as {bound}" if bound else renamed)
+    if not changed:
+        return None
+    if "(" not in segment:
+        return f"{head} {', '.join(bindings)}"
+    if "\n" not in segment:
+        return f"{head} ({', '.join(bindings)})"
+    indent = " " * node.col_offset
+    body = "".join(f"{indent}    {binding},\n" for binding in bindings)
+    return f"{head} (\n{body}{indent})"
+
+
+def _history_import(
+    node: ast.Import,
+    rules: list[Rule],
+    protections: dict[str, re.Pattern[str]],
+) -> str | None:
+    """Return a revision's ``import`` pointed at the moved modules, if it changes.
+
+    :param node: The import.
+    :param rules: The ordered rules.
+    :param protections: The spans to mask.
+    :return: The new statement, or ``None`` when nothing it names moved.
+    :raises UnsupportedImportError: When a moved module is imported without an
+        alias, since the body names it by the dotted path that no longer exists.
+    """
+    changed = False
+    bindings = []
+    for alias in node.names:
+        renamed = rename_path(alias.name, rules, protections)
+        if renamed != alias.name:
+            if alias.asname is None:
+                raise UnsupportedImportError(
+                    f"line {node.lineno}: `import {alias.name}` needs an alias "
+                    "to keep the body's references resolving"
+                )
+            changed = True
+        bindings.append(f"{renamed} as {alias.asname}" if alias.asname else renamed)
+    return f"import {', '.join(bindings)}" if changed else None
 
 
 def rewrite_history_imports(
-    text: str, rules: list[Rule], protections: dict[str, re.Pattern[str]]
+    path: str,
+    text: str,
+    rules: list[Rule],
+    protections: dict[str, re.Pattern[str]],
+    packages: dict[str, str],
 ) -> tuple[str, int]:
     """Point a revision script's imports at the moved modules, and change nothing else.
 
     A revision that imports from the renamed package cannot load once the
-    package moves, but its body is history and stays byte-identical. So only the
-    ``from ... import`` lines change: the module path takes its new name, and an
+    package moves, but its body is history and stays byte-identical. So only
+    the import statements change: the module path takes its new name, and an
     imported name that was renamed too is bound back to the name the body uses
-    (``extensions_settings as sep_settings``).
+    (``extensions_settings as sep_settings``). A comment after the statement is
+    kept where it was.
 
+    :param path: The revision script's path.
     :param text: The revision script.
     :param rules: The ordered rules.
     :param protections: The spans to mask.
-    :return: The rewritten script and the number of import lines changed.
+    :param packages: Old -> new for each moved package directory.
+    :return: The rewritten script and the number of import statements changed.
+    :raises UnsupportedImportError: On a form the rewrite cannot express, before
+        any file is changed: a comment inside a multi-line import, or a moved
+        module imported without an alias.
     """
-    count = 0
-
-    def _import(match: re.Match[str]) -> str:
-        nonlocal count
-        module = rename_path(match.group("module"), rules, protections)
-        if module == match.group("module"):
-            return match.group()
-        names = match.group("names")
-        parenthesised = names.startswith("(")
-        bindings = []
-        for entry in names.strip("()").split(","):
-            name, _, alias = (part.strip() for part in entry.strip().partition(" as "))
-            if not name:
-                continue
-            renamed = rename_path(name, rules, protections)
-            bound = alias or (name if renamed != name else "")
-            bindings.append(f"{renamed} as {bound}" if bound else renamed)
-        count += 1
-        if parenthesised:
-            body = "".join(f"    {binding},\n" for binding in bindings)
-            return f"from {module} import (\n{body})"
-        return f"from {module} import {', '.join(bindings)}"
-
-    return _HISTORY_IMPORT.sub(_import, text), count
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return text, 0
+    edits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Import | ast.ImportFrom):
+            continue
+        segment = ast.get_source_segment(text, node) or ""
+        if isinstance(node, ast.ImportFrom):
+            statement = _history_from_import(
+                path, node, segment, rules, protections, packages
+            )
+        else:
+            statement = _history_import(node, rules, protections)
+        if statement is None:
+            continue
+        if "#" in segment:
+            raise UnsupportedImportError(
+                f"line {node.lineno}: a comment inside the import would be lost"
+            )
+        edits.append(
+            _Edit(
+                (node.lineno, node.col_offset),
+                (node.end_lineno or node.lineno, node.end_col_offset or 0),
+                statement,
+            )
+        )
+    return _apply_edits(text, edits), len(edits)
 
 
 def rename_path(
@@ -1157,34 +1428,48 @@ def rewrite_file(
     text: str,
     rules: list[Rule],
     protections: dict[str, re.Pattern[str]],
+    packages: dict[str, str],
     report: Report,
 ) -> str:
     """Return one tracked file's new content, recording its counts in the report.
 
     A history file has only its imports rewritten, and any other excluded file
-    comes back unchanged. A lockfile gets only the rows it lists.
+    comes back unchanged. A Python file first has a package it imports by name
+    rebound. A lockfile gets only the rows it lists.
 
     :param path: The file's path before any move, which the path filters test.
     :param text: The file's content.
     :param rules: The ordered rules.
     :param protections: The spans to mask.
+    :param packages: Old -> new for each moved package directory.
     :param report: Receives the replacement, protection and collision counts.
     :return: The new content.
+    :raises UnsupportedImportError: On an import the rename cannot rewrite.
     """
-    if HISTORY_PATHS.search(path):
-        new_text, count = rewrite_history_imports(text, rules, protections)
-        if count:
-            report.replacements["pkg"] += count
-            report.files_per_row["pkg"] += 1
-        return new_text
-    if EXCLUDED_PATHS.search(path):
-        return text
+    try:
+        if HISTORY_PATHS.search(path):
+            new_text, count = rewrite_history_imports(
+                path, text, rules, protections, packages
+            )
+            if count:
+                report.replacements["pkg"] += count
+                report.files_per_row["pkg"] += 1
+            return new_text
+        if EXCLUDED_PATHS.search(path):
+            return text
+        rebound = 0
+        if PYTHON_PATHS.search(path):
+            text, rebound = rebind_package_imports(path, text, packages)
+    except UnsupportedImportError as error:
+        raise UnsupportedImportError(f"{path}: {error}") from error
     applicable = rules
     if path in LOCKFILE_ROWS:
         applicable = [rule for rule in rules if rule.row in LOCKFILE_ROWS[path]]
     new_text, counts, protected = rewrite(
         text, applicable, protections, prose=not PROSE_ONLY_PATHS.search(path)
     )
+    counts["pkg"] += rebound
+    counts = +counts
     report.protected.update(protected)
     report.replacements.update(counts)
     report.files_per_row.update(counts.keys())
@@ -1196,10 +1481,14 @@ def rewrite_file(
 def run(rename_map: RenameMap, *, dry_run: bool, side_repo: str | None) -> Report:
     """Move and rewrite the checkout, or only plan it on a dry run.
 
+    Every file's new content is computed before anything moves, so an import
+    the rename cannot rewrite stops the run with the tree untouched.
+
     :param rename_map: The parsed map.
     :param dry_run: Whether to leave the tree untouched.
     :param side_repo: The git-dir of the side repository tracking ignored files.
     :return: The report.
+    :raises UnsupportedImportError: On an import the rename cannot rewrite.
     """
     report = Report()
     rules = build_rules(rename_map, report)
@@ -1208,20 +1497,22 @@ def run(rename_map: RenameMap, *, dry_run: bool, side_repo: str | None) -> Repor
     protections = active_protections(rename_map) | revision_slug_protection(files)
     report.moved = plan_moves(files, rules, protections)
     report.moved_ignored = plan_ignored_moves(report.moved)
+    packages = package_dirs(rename_map)
+    rewritten = {}
+    for path in files:
+        text = read_text(REPO_ROOT / path)
+        if text is None:
+            continue
+        new_text = rewrite_file(path, text, rules, protections, packages, report)
+        if new_text != text:
+            rewritten[report.moved.get(path, path)] = new_text
+    report.edited = list(rewritten)
     if not dry_run:
         apply_moves(report.moved)
         apply_ignored_moves(report.moved_ignored, side_repo)
         remove_stale_caches(report.moved)
-    for path in files:
-        current = report.moved.get(path, path) if not dry_run else path
-        text = read_text(REPO_ROOT / current)
-        if text is None:
-            continue
-        new_text = rewrite_file(path, text, rules, protections, report)
-        if new_text != text:
-            report.edited.append(current)
-            if not dry_run:
-                (REPO_ROOT / current).write_text(new_text, encoding="utf-8")
+        for current, new_text in rewritten.items():
+            (REPO_ROOT / current).write_text(new_text, encoding="utf-8")
     return report
 
 
@@ -1264,7 +1555,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
     rename_map = RenameMap(json.loads(args.map.read_text(encoding="utf-8"))["rows"])
-    report = run(rename_map, dry_run=args.dry_run, side_repo=args.side_repo)
+    try:
+        report = run(rename_map, dry_run=args.dry_run, side_repo=args.side_repo)
+    except UnsupportedImportError as error:
+        print(f"Nothing changed. Unsupported import: {error}", file=sys.stderr)
+        return 1
     print_summary(report, dry_run=args.dry_run)
     if args.report:
         args.report.write_text(

@@ -15,6 +15,7 @@
 
 """Cover the Celery beat schedule-table bootstrap the side-car runs before its APIs."""
 
+import json
 import logging
 from collections.abc import Callable
 from contextlib import nullcontext
@@ -500,10 +501,10 @@ def _seed_schedules(url: str, schedules: dict[str, str]) -> None:
 
 
 def test_the_bootstrap_moves_pre_rename_schedules_forward(sqlite_beat_store: str):
-    """Rename old-prefixed schedules and their task paths, and drop re-seeded ones.
+    """Rename old-prefixed schedules and their task paths over never-run seeds.
 
-    A schedule already seeded under its new name is the duplicate, so the old
-    row goes. A schedule of another service is left alone, and a second run
+    A schedule already seeded under its new name but never fired gives way to
+    the old row. A schedule of another service is left alone, and a second run
     finds nothing left to move.
     """
     old_name, old_task = (
@@ -585,3 +586,130 @@ def test_the_bootstrap_moves_pre_rename_paths_in_an_operator_schedule(
         "app.tasks.celery.execute_task_by_name",
         f'{{"meta": {{"syncer": "{new_task}{syncer}"}}}}',
     )
+
+
+def _store_rows(url: str, rows: list[PeriodicTask]) -> None:
+    """Store the given schedules on one shared hourly interval.
+
+    :param url: The beat store URL.
+    :param rows: The unsaved schedules, without a schedule model.
+    """
+    engine, session_factory = SessionManager().create_session(url)
+    try:
+        with session_factory() as session:
+            interval = IntervalSchedule(every=1, period=Period.HOURS)
+            session.add(interval)
+            session.flush()
+            for row in rows:
+                row.schedule_model = interval
+            session.add_all(rows)
+            session.commit()
+    finally:
+        engine.dispose()
+
+
+def test_a_legacy_schedule_keeps_its_state_over_a_fresh_seed(sqlite_beat_store: str):
+    """Carry the old row's ``enabled`` choice and run count past a never-run seed."""
+    old_name, new_name = bootstrap.PRE_RENAME_NAME_PREFIX, bootstrap.NAME_PREFIX
+    bootstrap.bootstrap_beat_schema()
+    _store_rows(
+        sqlite_beat_store,
+        [
+            PeriodicTask(
+                name=f"{old_name}sync_snippets",
+                task=f"{bootstrap.PRE_RENAME_TASK_PREFIX}snippets.celery.sync",
+                enabled=False,
+                total_run_count=42,
+            ),
+            PeriodicTask(
+                name=f"{new_name}sync_snippets",
+                task=f"{bootstrap.TASK_PREFIX}snippets.celery.sync",
+            ),
+        ],
+    )
+
+    bootstrap.bootstrap_beat_schema()
+
+    engine, session_factory = SessionManager().create_session(sqlite_beat_store)
+    try:
+        with session_factory() as session:
+            rows = [
+                (row.name, row.task, row.enabled, row.total_run_count)
+                for row in session.query(PeriodicTask)
+            ]
+    finally:
+        engine.dispose()
+    assert rows == [
+        (
+            f"{new_name}sync_snippets",
+            f"{bootstrap.TASK_PREFIX}snippets.celery.sync",
+            False,
+            42,
+        )
+    ]
+
+
+def test_a_schedule_that_fired_under_both_names_fails_the_step(
+    sqlite_beat_store: str,
+):
+    """Refuse to pick between two schedules that each carry run state."""
+    old_name, new_name = bootstrap.PRE_RENAME_NAME_PREFIX, bootstrap.NAME_PREFIX
+    bootstrap.bootstrap_beat_schema()
+    _store_rows(
+        sqlite_beat_store,
+        [
+            PeriodicTask(
+                name=f"{old_name}sync_snippets",
+                task="app.tasks.celery.sync",
+                total_run_count=42,
+            ),
+            PeriodicTask(
+                name=f"{new_name}sync_snippets",
+                task="app.tasks.celery.sync",
+                total_run_count=1,
+            ),
+        ],
+    )
+
+    with pytest.raises(bootstrap.PreRenameScheduleConflictError):
+        bootstrap.bootstrap_beat_schema()
+
+    assert set(_schedules(sqlite_beat_store)) == {
+        f"{old_name}sync_snippets",
+        f"{new_name}sync_snippets",
+    }
+
+
+def test_kwargs_move_only_values_that_start_with_the_package(sqlite_beat_store: str):
+    """Leave keys and strings that merely contain the package text as stored."""
+    old_task, new_task = bootstrap.PRE_RENAME_TASK_PREFIX, bootstrap.TASK_PREFIX
+    kwargs = {
+        "syncers": [f"{old_task}sync.syncers.pmm.PMMSyncer"],
+        f"{old_task}key": "https://myapp.sep.example/api",
+        "note": f"see {old_task}sync",
+    }
+    bootstrap.bootstrap_beat_schema()
+    _store_rows(
+        sqlite_beat_store,
+        [
+            PeriodicTask(
+                name="pinned sync",
+                task="app.tasks.celery.execute_task_by_name",
+                kwargs=json.dumps(kwargs),
+            )
+        ],
+    )
+
+    bootstrap.bootstrap_beat_schema()
+
+    engine, session_factory = SessionManager().create_session(sqlite_beat_store)
+    try:
+        with session_factory() as session:
+            stored = json.loads(session.query(PeriodicTask).one().kwargs)
+        assert bootstrap.move_pre_rename_periodic_tasks(session_factory) == 0
+    finally:
+        engine.dispose()
+    assert stored == {
+        **kwargs,
+        "syncers": [f"{new_task}sync.syncers.pmm.PMMSyncer"],
+    }

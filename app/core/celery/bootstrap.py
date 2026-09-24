@@ -32,11 +32,12 @@ engine, which resolves the same setting through a driver
 :meth:`~sqlalchemy_celery_beat.session.SessionManager.prepare_models` cannot use.
 """
 
+import json
 import logging
 import logging.config
 from time import sleep
 
-from sqlalchemy import or_
+from sqlalchemy import inspect, or_
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -103,23 +104,78 @@ TASK_PREFIX = "app.extensions."
 """The package the scheduled task paths name now."""
 
 
+class PreRenameScheduleConflictError(RuntimeError):
+    """A schedule is stored under both its names, and both have fired."""
+
+
+def _has_run(row: PeriodicTask) -> bool:
+    """Return whether beat has fired a schedule since it was stored.
+
+    :param row: The stored schedule.
+    :return: Whether it has a recorded run.
+    """
+    return bool(row.total_run_count) or row.last_run_at is not None
+
+
+def _move_task_path(value: object) -> object:
+    """Move every string that starts with the pre-rename package to the new one.
+
+    Only a value that *starts* with the package's dotted path is a path under
+    it; a key, or a string that merely contains the text, is left as stored.
+
+    :param value: A decoded JSON value.
+    :return: The value with each such string moved, or the value itself.
+    """
+    if isinstance(value, str) and value.startswith(PRE_RENAME_TASK_PREFIX):
+        return TASK_PREFIX + value.removeprefix(PRE_RENAME_TASK_PREFIX)
+    if isinstance(value, dict):
+        return {key: _move_task_path(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_move_task_path(item) for item in value]
+    return value
+
+
+def _moved_kwargs(kwargs: str | None) -> str | None:
+    """Return a row's JSON keyword arguments with their task paths moved.
+
+    :param kwargs: The stored keyword arguments, a JSON object.
+    :return: The rewritten JSON, or ``None`` when nothing in it moves.
+    """
+    if not kwargs or PRE_RENAME_TASK_PREFIX not in kwargs:
+        return None
+    try:
+        decoded = json.loads(kwargs)
+    except ValueError:
+        logger.warning("Left a Celery beat schedule's unparsable kwargs as stored.")
+        return None
+    moved = _move_task_path(decoded)
+    return json.dumps(moved) if moved != decoded else None
+
+
 def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> int:
     """Move stored schedules forward from their pre-rename names and task paths.
 
     A beat row stores the schedule's name, seeded under a prefix, the dotted
     path of the task it fires, a module path under the package, and keyword
     arguments that can name another such path, such as the syncer an inventory
-    sync is pinned to. The rename moved all three. Seeding reconciles only rows under the current prefix, so
-    a row left under the old one would keep firing a task path that no longer
-    resolves, alongside the new row seeded beside it. Renaming the row in place
-    keeps its schedule state instead. A row whose new name was already seeded is
-    the duplicate, and is deleted.
+    sync is pinned to. The rename moved all three. Seeding reconciles only rows
+    under the current prefix, so a row left under the old one would keep firing
+    a task path that no longer resolves, alongside the new row seeded beside it.
+    Renaming the row in place keeps its schedule state instead.
+
+    A row whose new name is already stored is resolved by run state. When the
+    stored row has never fired, it is a fresh seed and gives way, so the old
+    row's configuration, ``enabled`` choice and run count carry forward. When
+    both have fired, neither can be dropped without losing an operator's state,
+    and the step fails instead.
 
     The rows are changed through the ORM, so the library's change listener tells
     a running scheduler to reload. Every later run finds nothing to move.
 
     :param session_factory: Sessions bound to the resolved beat store.
-    :return: How many rows were renamed or deleted.
+    :return: How many rows were moved.
+    :raises PreRenameScheduleConflictError: When a schedule stored under both
+        names has fired under both.
     """
     with session_factory() as session:
         stale = (
@@ -139,28 +195,35 @@ def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> in
             )
             .all()
         )
-        if not stale:
-            return 0
-        seeded = {
-            name
-            for (name,) in session.query(PeriodicTask.name).filter(
-                PeriodicTask.name.startswith(NAME_PREFIX, autoescape=True)
-            )
-        }
+        moved = 0
         for row in stale:
+            if inspect(row).deleted:
+                continue
+            changed = False
             if row.name.startswith(PRE_RENAME_NAME_PREFIX):
                 name = NAME_PREFIX + row.name.removeprefix(PRE_RENAME_NAME_PREFIX)
-                if name in seeded:
-                    session.delete(row)
-                    continue
+                current = session.query(PeriodicTask).filter_by(name=name).one_or_none()
+                if current is not None:
+                    if _has_run(current):
+                        raise PreRenameScheduleConflictError(
+                            f"Celery beat schedules {row.name!r} and {name!r} have "
+                            "both fired; delete the one to discard, then rerun."
+                        )
+                    session.delete(current)
+                    session.flush()
                 row.name = name
+                changed = True
             if row.task.startswith(PRE_RENAME_TASK_PREFIX):
                 row.task = TASK_PREFIX + row.task.removeprefix(PRE_RENAME_TASK_PREFIX)
-            if row.kwargs and PRE_RENAME_TASK_PREFIX in row.kwargs:
-                row.kwargs = row.kwargs.replace(PRE_RENAME_TASK_PREFIX, TASK_PREFIX)
+                changed = True
+            if (kwargs := _moved_kwargs(row.kwargs)) is not None:
+                row.kwargs = kwargs
+                changed = True
+            moved += changed
         session.commit()
-    logger.info("Moved %d Celery beat schedules to their renamed names.", len(stale))
-    return len(stale)
+    if moved:
+        logger.info("Moved %d Celery beat schedules to their renamed names.", moved)
+    return moved
 
 
 def bootstrap_beat_schema() -> None:

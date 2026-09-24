@@ -39,6 +39,11 @@ run history and its absence counts across the upgrade.
 The track's main branch takes the ``extensions_main`` label here. Its first
 label, ``sep_main``, is history and stays on the revision that set it; the
 Makefile and tests address the branch through the new one.
+
+Downgrade across the rename is unsupported. The downgrade restores this
+table and its rows, but the release before the rename cannot run on the
+database regardless: the version table keeps its new name, and the beat
+schedules moved at startup have no reverse step.
 """
 
 import sqlalchemy as sa

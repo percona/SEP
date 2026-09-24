@@ -41,6 +41,24 @@ def _rules(rows: list[dict[str, object]] = _ROWS) -> tuple[list, dict]:
     return rules, rename.active_protections(rename_map)
 
 
+_PACKAGES = rename.package_dirs(rename.RenameMap(_ROWS))
+_REVISION = "app/sep/migrations/versions/2026_01_01_0000-0123456789ab_x.py"
+
+
+def _history(text: str) -> tuple[str, int]:
+    rules, protections = _rules()
+    return rename.rewrite_history_imports(
+        _REVISION, text, rules, protections, _PACKAGES
+    )
+
+
+def _rewrite_file(path: str, text: str) -> str:
+    rules, protections = _rules()
+    return rename.rewrite_file(
+        path, text, rules, protections, _PACKAGES, rename.Report()
+    )
+
+
 def _rewrite(text: str, *, prose: bool = True) -> tuple[str, Counter[str]]:
     rules, protections = _rules()
     new_text, counts, _ = rename.rewrite(text, rules, protections, prose=prose)
@@ -145,6 +163,9 @@ def test_rewrite_renames_each_shape(old: str, new: str) -> None:
         "PMM's --sep-token principal",
         "SEPARATOR = '|'",
         "import { sepThemeOptions, sepPrimaryLight } from '@percona/percona-ui';",
+        'sep = ","\nok = sep.isascii() and sep.isspace()\n',
+        "const sep = '/';\nconst last = sep.at(-1);\n",
+        "See https://example.org/sep-api/ and https://sep.example.com/SEP_x.",
     ],
 )
 def test_rewrite_leaves_protected_spans(text: str) -> None:
@@ -235,8 +256,8 @@ def test_history_imports_follow_the_package_and_bind_back_renamed_names() -> Non
         "\n"
         'op.create_table("x", schema=sep_settings.DATABASE.SCHEMA)\n'
     )
-    assert rename.rewrite_history_imports(text, rules, protections) == (expected, 2)
-    assert rename.rewrite_history_imports(expected, rules, protections) == (expected, 0)
+    assert _history(text) == (expected, 2)
+    assert _history(expected) == (expected, 0)
 
 
 def test_revision_slugs_of_history_files_are_guarded() -> None:
@@ -255,3 +276,134 @@ def test_pre_rename_constants_keep_their_frozen_values() -> None:
     """Leave the old names a forward migration reads, and the constant's name."""
     text = 'PRE_RENAME_VERSION_TABLE = "alembic_version_sep"\n'
     assert _rewrite(text)[0] == text
+
+
+def test_generated_spec_names_follow_the_package() -> None:
+    """Rename the generated API spec and client, the only bare ``sep.`` outside Python."""
+    assert _rewrite("'../../api/specs/sep.json' and `generated/sep.ts`")[0] == (
+        "'../../api/specs/extensions.json' and `generated/extensions.ts`"
+    )
+
+
+def test_a_mapped_endpoint_inside_a_url_is_still_renamed() -> None:
+    """Mask a URL only from the generic rules, not from the mapped rows."""
+    text = (
+        "curl http://localhost:8000/api/sep/app-info and https://example.org/sep-api/"
+    )
+    assert _rewrite(text)[0] == (
+        "curl http://localhost:8000/api/extensions/app-info and https://example.org/sep-api/"
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "old", "new"),
+    [
+        (
+            "app/core/x.py",
+            "from app import sep\n\nsep.main()\nreload(sep)\n",
+            "from app import extensions\n\nextensions.main()\nreload(extensions)\n",
+        ),
+        (
+            "app/core/x.py",
+            "from app import sep as pkg\n\npkg.main()\n",
+            "from app import extensions as pkg\n\npkg.main()\n",
+        ),
+        (
+            "app/core/x.py",
+            "from app import (\n    core,\n    sep,\n)\n\nsep.main(sep=',')\n",
+            "from app import (\n    core,\n    extensions,\n)\n\nextensions.main(sep=',')\n",
+        ),
+        (
+            "app/core/x.py",
+            "from .. import sep\n\nsep.main()\n",
+            "from .. import extensions\n\nextensions.main()\n",
+        ),
+        (
+            "tests/app/conftest.py",
+            "from . import sep as tests_pkg\n",
+            "from . import extensions as tests_pkg\n",
+        ),
+        (
+            "scripts/x.py",
+            "from . import sep\n\nsep.main()\n",
+            "from . import sep\n\nsep.main()\n",
+        ),
+    ],
+)
+def test_a_package_imported_by_name_is_rebound(path: str, old: str, new: str) -> None:
+    """Rename a package bound by a ``from`` import, and its uses when unaliased."""
+    assert _rewrite_file(path, old) == new
+
+
+def test_a_package_binding_that_is_also_a_parameter_is_rejected() -> None:
+    """Refuse a file whose package binding a function parameter shadows."""
+    text = "from app import sep\n\n\ndef f(sep):\n    return sep.x\n"
+    with pytest.raises(rename.UnsupportedImportError, match="parameter"):
+        _rewrite_file("app/core/x.py", text)
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        (
+            "import app.sep.config as config\n",
+            "import app.extensions.config as config\n",
+        ),
+        (
+            "from app.sep.config import sep_settings  # configuration\n",
+            "from app.extensions.config import extensions_settings as sep_settings  # configuration\n",
+        ),
+        (
+            "from ..sep.config import sep_settings\n",
+            "from ..extensions.config import extensions_settings as sep_settings\n",
+        ),
+        ("from app import sep\n", "from app import extensions as sep\n"),
+        (
+            "def upgrade():\n    from app.sep.config import (\n        OTHER,\n        sep_settings,\n    )\n",
+            "def upgrade():\n    from app.extensions.config import (\n        OTHER,\n        extensions_settings as sep_settings,\n    )\n",
+        ),
+        (
+            "from os import sep\nimport os.path\n",
+            "from os import sep\nimport os.path\n",
+        ),
+    ],
+)
+def test_history_import_forms(old: str, new: str) -> None:
+    """Point each supported import form at the moved modules, keeping its bindings."""
+    assert _history(old)[0] == new
+    assert _history(new)[0] == new
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "import app.sep.config\n",
+        "from app.sep.config import (\n    sep_settings,  # the settings\n)\n",
+    ],
+)
+def test_unsupported_history_imports_are_rejected(text: str) -> None:
+    """Refuse an import whose rewrite would break the body or drop a comment."""
+    with pytest.raises(rename.UnsupportedImportError):
+        _history(text)
+
+
+def test_an_unsupported_import_stops_the_run_before_anything_changes(
+    tmp_path, monkeypatch
+) -> None:
+    """Plan every edit before the first move, so a rejection leaves the tree as it was."""
+    files = {
+        "app/sep/main.py": "from app.sep.config import sep_settings\n",
+        _REVISION: "import app.sep.config\n",
+    }
+    for path, text in files.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(text, encoding="utf-8")
+    monkeypatch.setattr(rename, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(rename, "tracked_files", lambda: list(files))
+
+    with pytest.raises(rename.UnsupportedImportError, match=_REVISION):
+        rename.run(rename.RenameMap(_ROWS), dry_run=False, side_repo=None)
+
+    assert {
+        path: (tmp_path / path).read_text(encoding="utf-8") for path in files
+    } == files
