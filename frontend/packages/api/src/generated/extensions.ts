@@ -4944,8 +4944,8 @@ export interface components {
       updated_at?: string | null;
     };
     /**
-     * SepHistoryPayload
-     * @description Represent the SEP task-history page envelope with passthrough extras.
+     * ExtensionsHistoryPayload
+     * @description Represent the PMM Extensions task-history page envelope with passthrough extras.
      *
      *     Declare only ``items``: ``total``, ``offset``, ``limit``, and any other
      *     upstream keys round-trip through ``extra="allow"`` without int coercion.
@@ -4955,14 +4955,14 @@ export interface components {
      *     :param items: The page's rows when upstream sent a list; otherwise the raw
      *         upstream value (including absence, via ``exclude_unset`` on dump).
      */
-    SepHistoryPayload: {
+    ExtensionsHistoryPayload: {
       /** Items */
-      items?: (components['schemas']['SepHistoryPayloadRow'] | unknown)[] | unknown;
+      items?: (components['schemas']['ExtensionsHistoryPayloadRow'] | unknown)[] | unknown;
     } & {
       [key: string]: unknown;
     };
     /**
-     * SepHistoryPayloadRow
+     * ExtensionsHistoryPayloadRow
      * @description Carry one history-page row's fields the actor rewrite may resolve.
      *
      *     A non-mapping ``task`` stays on the ``Any`` arm so the row still validates
@@ -4974,16 +4974,16 @@ export interface components {
      *     :param task: Nested task carrying actor fields when it is a mapping;
      *         otherwise the raw upstream value.
      */
-    SepHistoryPayloadRow: {
+    ExtensionsHistoryPayloadRow: {
       /** Executed By */
       executed_by?: unknown;
       /** Task */
-      task?: components['schemas']['SepHistoryPayloadTask'] | unknown;
+      task?: components['schemas']['ExtensionsHistoryPayloadTask'] | unknown;
     } & {
       [key: string]: unknown;
     };
     /**
-     * SepHistoryPayloadTask
+     * ExtensionsHistoryPayloadTask
      * @description Carry the nested-task actor fields the history rewrite may resolve.
      *
      *     :param created_by: Actor for the nested task's creator. Typed as ``Any`` so
@@ -4991,7 +4991,7 @@ export interface components {
      *     :param last_updated_by: Actor for the nested task's last updater, on the
      *         same permissive terms as ``created_by``.
      */
-    SepHistoryPayloadTask: {
+    ExtensionsHistoryPayloadTask: {
       /** Created By */
       created_by?: unknown;
       /** Last Updated By */
@@ -12035,7 +12035,7 @@ export interface components {
      *         inventory-resolved labels when possible.
      */
     tasks__TaskDetailResponse: {
-      execution_history?: components['schemas']['SepHistoryPayload'];
+      execution_history?: components['schemas']['ExtensionsHistoryPayload'];
       /** Executor Hosts */
       executor_hosts?: components['schemas']['tasks__ExecutorHostMetadata'][];
       /** Periodic Summary */

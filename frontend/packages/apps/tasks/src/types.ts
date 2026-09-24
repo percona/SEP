@@ -15,8 +15,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import type { SepComponents, TasksComponents } from '@pmm-extensions/api';
-import type { TaskHistoryEntry } from '@sep/framework';
+import type { ExtensionsComponents, TasksComponents } from '@pmm-extensions/api';
+import type { TaskHistoryEntry } from '@pmm-extensions/framework';
 
 /** App key used for ``/api/apps/{name}/`` routes and schema fetching. */
 export const TASKS_APP_NAME = 'tasks';
@@ -52,8 +52,8 @@ export interface ExecutorHostRow {
 
 export type TaskDetailTask = TasksComponents['schemas']['TaskResponse'];
 
-/** History envelope from ``GET /api/apps/tasks/{task_name}`` (SEP-typed). */
-export type TaskExecutionHistory = SepComponents['schemas']['SepHistoryPayload'];
+/** History envelope from ``GET /api/apps/tasks/{task_name}`` (PMM Extensions typed). */
+export type TaskExecutionHistory = ExtensionsComponents['schemas']['ExtensionsHistoryPayload'];
 
 /**
  * Return well-formed history rows for the detail UI, or ``[]`` when ``items``

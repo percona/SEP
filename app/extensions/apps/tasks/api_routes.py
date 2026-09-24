@@ -28,11 +28,11 @@ from fastapi import APIRouter
 from app.core.pagination import build_proxied_page, PaginatedResponse, PaginationDep
 from app.core.requests import as_json_array, as_json_object
 from app.extensions.api.task_history_actors import (
+    ExtensionsHistoryPayload,
     ExtensionsTaskResponse,
     resolve_actor,
     resolve_history_payload_actors,
     resolve_task_actors,
-    SepHistoryPayload,
 )
 from app.extensions.apps.framework.api import schema_endpoint
 from app.extensions.apps.tasks.deps import TaskDep
@@ -101,7 +101,7 @@ async def tasks_api_detail(
         with every actor identifier on the task and inside the history rows
         resolved to the name a reader should see.
     """
-    execution_history = SepHistoryPayload.model_validate(
+    execution_history = ExtensionsHistoryPayload.model_validate(
         {"items": [], "total": 0, "offset": 0, "limit": 0}
     )
     periodic_summary: list[PeriodicTaskSummary] = []
@@ -113,7 +113,7 @@ async def tasks_api_detail(
         periodic_summary = [
             PeriodicTaskSummary.model_validate(item) for item in periodic_response
         ]
-        execution_history = SepHistoryPayload.model_validate(
+        execution_history = ExtensionsHistoryPayload.model_validate(
             as_json_object(await tasks_api.get(task_path(task.name, "/history/")))
         )
 

@@ -21,8 +21,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.core.utils.fields import UTCDatetime
 from app.extensions.api.task_history_actors import (
+    ExtensionsHistoryPayload,
     ExtensionsTaskResponse,
-    SepHistoryPayload,
 )
 from app.tasks.models import TaskBackendEnum, TaskHistoryStatusEnum
 
@@ -138,8 +138,8 @@ class TaskDetailResponse(BaseModel):
     """
 
     task: ExtensionsTaskResponse
-    execution_history: SepHistoryPayload = Field(
-        default_factory=lambda: SepHistoryPayload.model_validate(
+    execution_history: ExtensionsHistoryPayload = Field(
+        default_factory=lambda: ExtensionsHistoryPayload.model_validate(
             {"items": [], "total": 0, "offset": 0, "limit": 0}
         )
     )

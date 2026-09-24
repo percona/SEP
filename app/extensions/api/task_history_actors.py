@@ -38,11 +38,11 @@ from app.tasks.models import SYSTEM_USER, Task, TaskHistoryResponse, TaskRespons
 __all__ = [
     "SYSTEM_ACTOR_LABELS",
     "TASK_ACTOR_FIELDS",
+    "ExtensionsHistoryPayload",
+    "ExtensionsHistoryPayloadRow",
+    "ExtensionsHistoryPayloadTask",
     "ExtensionsTaskHistoryResponse",
     "ExtensionsTaskResponse",
-    "SepHistoryPayload",
-    "SepHistoryPayloadRow",
-    "SepHistoryPayloadTask",
     "resolve_actor",
     "resolve_history_payload_actors",
     "resolve_task_actors",
@@ -113,7 +113,7 @@ class _HistoryPassthroughModel(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class SepHistoryPayloadTask(_HistoryPassthroughModel):
+class ExtensionsHistoryPayloadTask(_HistoryPassthroughModel):
     """Carry the nested-task actor fields the history rewrite may resolve.
 
     :param created_by: Actor for the nested task's creator. Typed as ``Any`` so
@@ -126,7 +126,7 @@ class SepHistoryPayloadTask(_HistoryPassthroughModel):
     last_updated_by: Any = None
 
 
-class SepHistoryPayloadRow(_HistoryPassthroughModel):
+class ExtensionsHistoryPayloadRow(_HistoryPassthroughModel):
     """Carry one history-page row's fields the actor rewrite may resolve.
 
     A non-mapping ``task`` stays on the ``Any`` arm so the row still validates
@@ -140,11 +140,11 @@ class SepHistoryPayloadRow(_HistoryPassthroughModel):
     """
 
     executed_by: Any = None
-    task: SepHistoryPayloadTask | Any = None
+    task: ExtensionsHistoryPayloadTask | Any = None
 
 
-class SepHistoryPayload(_HistoryPassthroughModel):
-    """Represent the SEP task-history page envelope with passthrough extras.
+class ExtensionsHistoryPayload(_HistoryPassthroughModel):
+    """Represent the PMM Extensions task-history page envelope with passthrough extras.
 
     Declare only ``items``: ``total``, ``offset``, ``limit``, and any other
     upstream keys round-trip through ``extra="allow"`` without int coercion.
@@ -155,7 +155,7 @@ class SepHistoryPayload(_HistoryPassthroughModel):
         upstream value (including absence, via ``exclude_unset`` on dump).
     """
 
-    items: list[SepHistoryPayloadRow | Any] | Any = None
+    items: list[ExtensionsHistoryPayloadRow | Any] | Any = None
 
 
 def resolve_actor(actor: str | None, username_map: Mapping[str, str]) -> str | None:
@@ -249,8 +249,8 @@ def _resolve_payload_actor_key(
 
 
 def resolve_history_payload_actors(
-    payload: SepHistoryPayload, username_map: Mapping[str, str]
-) -> SepHistoryPayload:
+    payload: ExtensionsHistoryPayload, username_map: Mapping[str, str]
+) -> ExtensionsHistoryPayload:
     """Rewrite actor identifiers inside a typed task-history payload.
 
     Skip any row, any nested task, and any actor value whose shape is not the
@@ -265,11 +265,11 @@ def resolve_history_payload_actors(
     if "items" not in payload.model_fields_set or not isinstance(payload.items, list):
         return payload
     for item in payload.items:
-        if not isinstance(item, SepHistoryPayloadRow):
+        if not isinstance(item, ExtensionsHistoryPayloadRow):
             continue
         _resolve_payload_actor_key(item, "executed_by", username_map)
         if "task" not in item.model_fields_set or not isinstance(
-            item.task, SepHistoryPayloadTask
+            item.task, ExtensionsHistoryPayloadTask
         ):
             continue
         for key in TASK_ACTOR_FIELDS:

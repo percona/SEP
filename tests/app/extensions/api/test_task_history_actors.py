@@ -22,13 +22,13 @@ import pytest
 from app.api.deps import SERVICE_PRINCIPAL_ID
 from app.core.pagination import PaginatedResponse, Pagination
 from app.extensions.api.task_history_actors import (
+    ExtensionsHistoryPayload,
     ExtensionsTaskHistoryResponse,
     ExtensionsTaskResponse,
     resolve_actor,
     resolve_history_payload_actors,
     resolve_task_actors,
     resolve_task_history_actors,
-    SepHistoryPayload,
     SYSTEM_ACTOR_LABELS,
     TASK_ACTOR_FIELDS,
     task_actor_fields,
@@ -267,9 +267,9 @@ class TestResolveHistoryPayloadActors:
     """Cover the typed passthrough resolver and its wrong-shape guards."""
 
     @staticmethod
-    def _payload(raw: dict[str, Any]) -> SepHistoryPayload:
+    def _payload(raw: dict[str, Any]) -> ExtensionsHistoryPayload:
         """Validate a raw history page into the typed envelope under test."""
-        return SepHistoryPayload.model_validate(raw)
+        return ExtensionsHistoryPayload.model_validate(raw)
 
     def test_resolves_all_three_fields_on_a_well_formed_page(self):
         """Rewrite the executor and both nested task actors on each row."""
