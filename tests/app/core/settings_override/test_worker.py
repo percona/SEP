@@ -37,7 +37,7 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.proxy import OverridableSettingsProxy
 from app.core.settings_override.worker import SEED_TIMEOUT_FRACTION, WorkerRefresher
 from app.core.utils import json_serializer
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     BOUNDED_SEED,
@@ -79,9 +79,11 @@ async def _noop_callback(_: SnapshotChange) -> None:
 def _make_registry() -> ProxyRegistry:
     """Compose a two-entry proxy registry over freshly-built proxies."""
     return {
-        SettingClassEnum.SEP_SETTINGS: ProxyEntry(
-            OverridableSettingsProxy(SEPSettings, setting_class=SEPSettings.__name__),
-            SEPSettings,
+        SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(
+            OverridableSettingsProxy(
+                ExtensionsSettings, setting_class=ExtensionsSettings.__name__
+            ),
+            ExtensionsSettings,
         ),
         SettingClassEnum.TASKS_SETTINGS: ProxyEntry(
             OverridableSettingsProxy(
@@ -93,7 +95,7 @@ def _make_registry() -> ProxyRegistry:
 
 
 CALLBACKS: CallbackRegistry = {(SettingClassEnum.SETTINGS, "PMM"): _noop_callback}
-_CALLBACK_KEY = (SettingClassEnum.SEP_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
+_CALLBACK_KEY = (SettingClassEnum.EXTENSIONS_SETTINGS, "CONNECTIVITY_CHECK_DEFAULT")
 
 
 class _CountingRegistry:
@@ -302,12 +304,14 @@ class TestWorkerRefresherStart:
         must rebind at once; a later boundary refresh still fires on a real diff.
         """
         proxy = OverridableSettingsProxy(
-            SEPSettings, setting_class=SEPSettings.__name__
+            ExtensionsSettings, setting_class=ExtensionsSettings.__name__
         )
-        registry = {SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings)}
+        registry = {
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings)
+        }
         fired: list[SnapshotChange] = []
         clock = _FakeClock()
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         callbacks = {_CALLBACK_KEY: fire_on_boot(recording_callback(fired))}
 
         loop.run_until_complete(
@@ -341,11 +345,13 @@ class TestWorkerRefresherStart:
     ) -> None:
         """Keep the child's inline seed silent for a boot-reproducing callback."""
         proxy = OverridableSettingsProxy(
-            SEPSettings, setting_class=SEPSettings.__name__
+            ExtensionsSettings, setting_class=ExtensionsSettings.__name__
         )
-        registry = {SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings)}
+        registry = {
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings)
+        }
         fired: list[SnapshotChange] = []
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
         callbacks = {_CALLBACK_KEY: recording_callback(fired)}
 
         loop.run_until_complete(
@@ -648,10 +654,10 @@ class TestWorkerRefresherMaybeRefresh:
     ) -> None:
         """Fire rebind callbacks when a watched override changes at the boundary."""
         proxy = OverridableSettingsProxy(
-            SEPSettings, setting_class=SEPSettings.__name__
+            ExtensionsSettings, setting_class=ExtensionsSettings.__name__
         )
         registry = {
-            SettingClassEnum.SEP_SETTINGS: ProxyEntry(proxy, SEPSettings),
+            SettingClassEnum.EXTENSIONS_SETTINGS: ProxyEntry(proxy, ExtensionsSettings),
         }
         fired: list[bool] = []
         clock = _FakeClock()
@@ -663,7 +669,7 @@ class TestWorkerRefresherMaybeRefresh:
             lambda: loop, lambda: session_maker, lambda: registry, now=clock
         )
         refresher.start(INTERVAL, enabled=True, callbacks={_CALLBACK_KEY: _callback})
-        override_value = not SEPSettings().CONNECTIVITY_CHECK_DEFAULT
+        override_value = not ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT
 
         loop.run_until_complete(
             seed_connectivity_override(session_maker, value=override_value)

@@ -255,23 +255,23 @@ async function mockAltersApis(page: Page, overrides: MockOverrides = {}): Promis
       });
     }
 
-    if (pathname.startsWith('/api/sep/task-history')) {
+    if (pathname.startsWith('/api/extensions/task-history')) {
       return route.fulfill({
         json: { items: [], total: 0, offset: 0, limit: 50 },
       });
     }
 
-    if (pathname.startsWith('/api/sep/task-stats')) {
+    if (pathname.startsWith('/api/extensions/task-stats')) {
       return route.fulfill({ json: {} });
     }
 
-    if (pathname.endsWith('/sep/hosts/')) {
+    if (pathname.endsWith('/extensions/hosts/')) {
       return route.fulfill({
         json: [{ id: 'host1', name: 'host1', address: '127.0.0.1' }],
       });
     }
 
-    if (pathname.endsWith('/sep/services/')) {
+    if (pathname.endsWith('/extensions/services/')) {
       return route.fulfill({
         json: {
           items: [{ id: 1, name: 'svc1', type: 'mysql' }],

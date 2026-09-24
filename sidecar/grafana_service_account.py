@@ -30,7 +30,7 @@ build-time helpers beside it, this one runs where ``bundle.tgz`` has already put
 
 Deployment inputs, all optional: ``GF_SECURITY_ADMIN_USER`` and
 ``GF_SECURITY_ADMIN_PASSWORD`` (each defaulting to Grafana's own ``admin``),
-``SEP_STATE_DIR`` and ``SEP_GRAFANA_MINT_TIMEOUT``.
+``EXTENSIONS_STATE_DIR`` and ``EXTENSIONS_GRAFANA_MINT_TIMEOUT``.
 """
 
 import asyncio
@@ -72,7 +72,7 @@ __all__ = [
 
 warn = partial(runtime_warn, "grafana-mint")
 
-SERVICE_ACCOUNT_NAME = "sep"
+SERVICE_ACCOUNT_NAME = "pmm-extensions"
 SERVICE_ACCOUNT_ROLE = "Admin"
 
 PERSISTED_FILENAME = "grafana_service_account_token"
@@ -138,7 +138,7 @@ def mint_timeout() -> float:
     :return: The bound in seconds.
     """
     return positive_timeout(
-        "SEP_GRAFANA_MINT_TIMEOUT", DEFAULT_MINT_TIMEOUT_SECONDS, warn
+        "EXTENSIONS_GRAFANA_MINT_TIMEOUT", DEFAULT_MINT_TIMEOUT_SECONDS, warn
     )
 
 
@@ -253,10 +253,10 @@ def token_name() -> str:
 
 
 async def search_account(provider: GrafanaSDK) -> int | None:
-    """Return the id of the service account named exactly ``sep``, if it exists.
+    """Return the id of the service account named exactly ``pmm-extensions``, if it exists.
 
     Grafana's ``query`` filters by substring, so the results are matched on the
-    exact name: an unrelated ``sep-legacy`` account comes back for a ``sep``
+    exact name: an unrelated ``pmm-extensions-legacy`` account comes back for a ``pmm-extensions``
     query, and minting onto it would be silent.
 
     :param provider: The open Grafana client, authenticated as the admin.

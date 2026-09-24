@@ -51,7 +51,7 @@ STORE_READINESS_POLL_INTERVAL = 1.0
 def _wait_for_store(engine: Engine) -> None:
     """Block until the beat store accepts a connection.
 
-    The side-car's three alembic one-shots wait on ``SEP_DB_HOST``/``SEP_DB_PORT``
+    The side-car's three alembic one-shots wait on ``EXTENSIONS_DB_HOST``/``EXTENSIONS_DB_PORT``
     in the shell, because that is the database they upgrade. The beat store is
     whatever ``CELERY.beat_dburi`` resolves to, and a deployment may point it at a
     separate database, so readiness is probed against the URL this process will

@@ -26,7 +26,7 @@ export const SUPPORT_DIAGNOSTICS_DOCS_URL = 'https://docs.percona.com';
 export const PERCONA_SUPPORT_URL = 'https://www.percona.com/services/support';
 
 /** The settings class and key an admin has to supply to enable delivery. */
-export const DELIVERY_SETTING_CLASS = 'SEPSettings';
+export const DELIVERY_SETTING_CLASS = 'ExtensionsSettings';
 export const DELIVERY_INPUTS_KEY = 'DIAGNOSTICS_DELIVERY_INPUTS';
 export const DELIVERY_PLAN_KEY = 'DIAGNOSTICS_DELIVERY';
 

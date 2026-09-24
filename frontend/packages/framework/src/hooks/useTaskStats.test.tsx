@@ -76,11 +76,11 @@ describe('useTaskStats', () => {
     expect(mockSepGet).not.toHaveBeenCalled();
   });
 
-  it('calls /api/sep/task-stats/{task_name} with the trimmed name in path params', async () => {
+  it('calls /api/extensions/task-stats/{task_name} with the trimmed name in path params', async () => {
     mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('  my-task  '), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockSepGet).toHaveBeenCalledWith('/api/sep/task-stats/{task_name}', {
+      expect(mockSepGet).toHaveBeenCalledWith('/api/extensions/task-stats/{task_name}', {
         params: { path: { task_name: 'my-task' } },
       });
     });
@@ -90,7 +90,7 @@ describe('useTaskStats', () => {
     mockSepGet.mockResolvedValue(SUCCESS_RESPONSE);
     renderHook(() => useTaskStats('weird/name with spaces&q=?'), { wrapper: wrapper() });
     await waitFor(() => {
-      expect(mockSepGet).toHaveBeenCalledWith('/api/sep/task-stats/{task_name}', {
+      expect(mockSepGet).toHaveBeenCalledWith('/api/extensions/task-stats/{task_name}', {
         params: { path: { task_name: 'weird/name with spaces&q=?' } },
       });
     });
@@ -104,7 +104,7 @@ describe('useTaskStats', () => {
         ok: false,
         status: 401,
         statusText: 'Unauthorized',
-        url: 'http://localhost/api/sep/task-stats/foo',
+        url: 'http://localhost/api/extensions/task-stats/foo',
       } as Response,
     });
     const { result } = renderHook(() => useTaskStats('foo'), { wrapper: wrapper() });
@@ -127,7 +127,7 @@ describe('useTaskStats', () => {
         ok: false,
         status: 502,
         statusText: 'Bad Gateway',
-        url: 'http://localhost/api/sep/task-stats/foo',
+        url: 'http://localhost/api/extensions/task-stats/foo',
       } as Response,
     });
     const { result } = renderHook(() => useTaskStats('foo'), { wrapper: wrapper() });

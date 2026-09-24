@@ -168,7 +168,7 @@ describe('StandaloneHostSelector', () => {
     expect(await screen.findByText('No hosts available')).toBeInTheDocument();
   });
 
-  it('refetches /api/sep/hosts/ when the dropdown is opened', async () => {
+  it('refetches /api/extensions/hosts/ when the dropdown is opened', async () => {
     const hosts = [{ id: 'nomad-1', name: 'db-mysql-prod-01', address: '10.0.0.1' }];
     mocked.get.mockResolvedValue(makeResponse(hosts));
 

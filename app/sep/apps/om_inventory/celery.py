@@ -17,7 +17,7 @@
 
 ``@owned_by("om_inventory")`` tags the task so the app-drain reconciler counts it
 toward this app rather than treating it as a core task. The module is included in the
-worker's ``include`` list because the app is registered in ``SEP.APPS`` and the
+worker's ``include`` list because the app is registered in ``EXTENSIONS.APPS`` and the
 registry derives the Celery module path from the package's ``celery.py``.
 """
 

@@ -462,7 +462,7 @@ describe('TaskHistoryTable connected stop mutation', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Stop' }));
 
     await waitFor(() =>
-      expect(mockedApiClient.post).toHaveBeenCalledWith('/sep/task-history/42/stop/'),
+      expect(mockedApiClient.post).toHaveBeenCalledWith('/extensions/task-history/42/stop/'),
     );
 
     await waitFor(() => expect(screen.getByText('Stopped')).toBeInTheDocument());

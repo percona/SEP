@@ -22,7 +22,7 @@ task|script|base] [field flags]`` (driven by ``make startapp``). On a TTY with n
 The engine validates the module name, refuses to clobber an existing plugin,
 renders the flavor's templates into ``app/sep/apps/<name>/`` and
 ``tests/app/sep/apps/<name>/``, copies the run-python payload beside ``spec.py``
-when one is supplied, and registers the app under the ``default:`` ``SEP.APPS``
+when one is supplied, and registers the app under the ``default:`` ``EXTENSIONS.APPS``
 block (disabled unless ``--enable``) so an admin activates it from the App
 Manager rather than the scaffolder doing so.
 
@@ -545,13 +545,13 @@ def _find_apps_key(lines: list[str], default_index: int) -> int:
         if line.strip() == "APPS:":
             return index
     raise ValueError(
-        "settings.yaml 'default:' section has no SEP.APPS block; cannot register "
+        "settings.yaml 'default:' section has no EXTENSIONS.APPS block; cannot register "
         "the app"
     )
 
 
 def _default_apps_span(lines: list[str]) -> tuple[int, int]:
-    """Return the ``[start, end)`` line span of the default ``SEP.APPS`` list body.
+    """Return the ``[start, end)`` line span of the default ``EXTENSIONS.APPS`` list body.
 
     ``start`` is the first entry line after ``APPS:``; ``end`` is one past the
     last list line (the next key at the ``APPS:`` indent or shallower ends it),
@@ -577,7 +577,7 @@ def _default_apps_span(lines: list[str]) -> tuple[int, int]:
 def insert_app_entry(
     settings_text: str, name: str, *, enabled: bool = False
 ) -> tuple[str, bool]:
-    """Insert a ``MODULE_NAME`` entry under the default ``SEP.APPS`` block.
+    """Insert a ``MODULE_NAME`` entry under the default ``EXTENSIONS.APPS`` block.
 
     A pure text transform — PyYAML cannot round-trip the file's comments, so the
     list body is edited line by line. Inserting a name that already has an entry is
@@ -588,7 +588,7 @@ def insert_app_entry(
     :param enabled: Whether to write the entry ``ENABLED: true``. Defaults to
         ``False`` (``ENABLED: false``), preserving the pre-wizard behaviour.
     :return: The (possibly unchanged) text and whether it was modified.
-    :raises ValueError: When the default ``SEP.APPS`` block is absent.
+    :raises ValueError: When the default ``EXTENSIONS.APPS`` block is absent.
     """
     lines = settings_text.splitlines(keepends=True)
     start, end = _default_apps_span(lines)
@@ -630,7 +630,7 @@ def write_settings_entry(name: str, *, enabled: bool = False) -> bool:
     :param enabled: Whether to write the entry enabled. Defaults to ``False``.
     :return: Whether the file was modified.
     :raises ValueError: Propagates from :func:`insert_app_entry` when
-        ``settings.yaml`` has no default ``SEP.APPS`` block.
+        ``settings.yaml`` has no default ``EXTENSIONS.APPS`` block.
     """
     new_text, changed = insert_app_entry(
         SETTINGS_FILE.read_text(encoding="utf-8"), name, enabled=enabled
@@ -680,7 +680,7 @@ def scaffold_app(config: ScaffoldConfig) -> ScaffoldResult:
     :param config: The resolved scaffold config.
     :return: The scaffold outcome for the caller's summary.
     :raises ValueError: When the name is invalid, or ``settings.yaml`` has no
-        default ``SEP.APPS`` block to register into.
+        default ``EXTENSIONS.APPS`` block to register into.
     :raises FileExistsError: When the app or test package directory holds a real
         plugin.
     :raises FileNotFoundError: When a run-python payload path or a supplied script

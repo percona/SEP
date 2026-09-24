@@ -156,17 +156,17 @@ def cookie_admin_client_fixture(
 
 
 class TestListAggregation:
-    """``GET /api/sep/admin/settings/`` aggregates the proxied Tasks group."""
+    """``GET /api/extensions/admin/settings/`` aggregates the proxied Tasks group."""
 
     def test_appends_tasks_group_fetched_server_side(
         self, admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
         """Return core, proxied TasksSettings, and app-owned groups in order."""
         mock_tasks.get.return_value = _tasks_list([_tasks_setting(has_override=True)])
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         classes = [g["setting_class"] for g in response.json()["groups"]]
-        assert {"SEPSettings", "SnippetsSettings", "AlertSettings"}.issubset(
+        assert {"ExtensionsSettings", "SnippetsSettings", "AlertSettings"}.issubset(
             set(classes)
         )
         assert classes[-5:] == [
@@ -183,12 +183,12 @@ class TestListAggregation:
     ) -> None:
         """Flag advanced settings (incl. every SESSION_REFRESH leaf) and only those."""
         mock_tasks.get.return_value = _tasks_list()
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         sep_group = next(
             g
             for g in response.json()["groups"]
-            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            if g["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
         )
         advanced = {s["key"]: s["is_advanced"] for s in sep_group["settings"]}
         # Top-level advanced settings.
@@ -207,12 +207,12 @@ class TestListAggregation:
     ) -> None:
         """Mark AMBIENT_SESSION_SSO_ENABLED not applicable under a non-Grafana provider."""
         mock_tasks.get.return_value = _tasks_list()
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         sep_group = next(
             g
             for g in response.json()["groups"]
-            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            if g["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
         )
         applicable = {s["key"]: s["is_applicable"] for s in sep_group["settings"]}
         assert applicable["AMBIENT_SESSION_SSO_ENABLED"] is False
@@ -224,12 +224,12 @@ class TestListAggregation:
     ) -> None:
         """Mark AMBIENT_SESSION_SSO_ENABLED applicable under the Grafana provider."""
         mock_tasks.get.return_value = _tasks_list()
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         sep_group = next(
             g
             for g in response.json()["groups"]
-            if g["setting_class"] == SettingClassEnum.SEP_SETTINGS.value
+            if g["setting_class"] == SettingClassEnum.EXTENSIONS_SETTINGS.value
         )
         applicable = {s["key"]: s["is_applicable"] for s in sep_group["settings"]}
         assert applicable["AMBIENT_SESSION_SSO_ENABLED"] is True
@@ -239,7 +239,7 @@ class TestListAggregation:
     ) -> None:
         """A Tasks group with no settings is appended without error."""
         mock_tasks.get.return_value = _tasks_list([])
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         tasks_group = next(
             g
@@ -255,7 +255,7 @@ class TestListAggregation:
         mock_tasks.get.side_effect = HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="tasks down"
         )
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "tasks down"}
 
@@ -264,7 +264,7 @@ class TestListAggregation:
     ) -> None:
         """A connection-level failure on the Tasks-group fetch becomes a 502."""
         mock_tasks.get.side_effect = OSError("connection refused")
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "connection refused"}
 
@@ -275,7 +275,7 @@ class TestListAggregation:
         mock_tasks.get.return_value = {
             "groups": [{"setting_class": "TasksSettings", "settings": [{"bad": "x"}]}]
         }
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
     def test_upstream_omits_tasks_group_fails_closed_502(
@@ -288,7 +288,7 @@ class TestListAggregation:
         the remote group, so it 502s rather than returning three groups.
         """
         mock_tasks.get.return_value = {"groups": []}
-        response = admin_client.get("/api/sep/admin/settings/")
+        response = admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert "TasksSettings" in response.json()["detail"]
 
@@ -302,7 +302,7 @@ class TestDispatch:
         """``GET .../TasksSettings/{key}`` proxies to the Tasks API and validates."""
         mock_tasks.get.return_value = _tasks_setting(has_override=True)
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_200_OK
         body = response.json()
@@ -322,7 +322,7 @@ class TestDispatch:
         """
         mock_tasks.get.return_value = _tasks_setting()
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["is_advanced"] is False
@@ -336,7 +336,7 @@ class TestDispatch:
             _tasks_setting(value=new_value, has_override=True)
         ]
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: new_value}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: new_value}
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["value"] == new_value
@@ -350,7 +350,7 @@ class TestDispatch:
         """``DELETE .../TasksSettings/{key}`` proxies and returns 204."""
         mock_tasks.delete.return_value = None
         response = admin_client.delete(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_204_NO_CONTENT
         mock_tasks.delete.assert_awaited_once_with(
@@ -372,7 +372,7 @@ class TestDispatch:
             ],
         )
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 0}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 0}
         )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         assert response.json()["detail"][0]["msg"] == "Input should be greater than 0"
@@ -390,7 +390,7 @@ class TestDispatch:
             status_code=status.HTTP_404_NOT_FOUND, detail="unknown key"
         )
         response = admin_client.get(
-            "/api/sep/admin/settings/TasksSettings/DOES_NOT_EXIST"
+            "/api/extensions/admin/settings/TasksSettings/DOES_NOT_EXIST"
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
         assert response.json() == {"detail": "unknown key"}
@@ -403,7 +403,8 @@ class TestDispatch:
     ) -> None:
         """A PATCH to a local class hits the SEP DB and never touches the Tasks API."""
         response = admin_client.patch(
-            "/api/sep/admin/settings/SEPSettings", json={"SYNC_REFRESH_TIME": 7}
+            "/api/extensions/admin/settings/ExtensionsSettings",
+            json={"SYNC_REFRESH_TIME": 7},
         )
         assert response.status_code == status.HTTP_200_OK
         assert response.json()[0]["key"] == "SYNC_REFRESH_TIME"
@@ -418,7 +419,7 @@ class TestDispatch:
             status_code=status.HTTP_400_BAD_REQUEST, detail="bad request"
         )
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_400_BAD_REQUEST
         assert response.json() == {"detail": "bad request"}
@@ -432,7 +433,9 @@ class TestDispatch:
         registered on the SEP router (local or remote), so ``_resolve`` 404s it
         before any dispatch -- the remote branch must not swallow an unknown class.
         """
-        response = admin_client.get(f"/api/sep/admin/settings/Settings/{TASKS_KEY}")
+        response = admin_client.get(
+            f"/api/extensions/admin/settings/Settings/{TASKS_KEY}"
+        )
         assert response.status_code == status.HTTP_404_NOT_FOUND
         mock_tasks.get.assert_not_awaited()
 
@@ -445,7 +448,7 @@ class TestAuthParity:
     ) -> None:
         """A non-admin is rejected before the proxy runs."""
         response = non_admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
         mock_tasks.get.assert_not_awaited()
@@ -455,7 +458,7 @@ class TestAuthParity:
     ) -> None:
         """A cookie-only admin cannot PATCH the remote class (no Bearer -> 401)."""
         response = cookie_admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_tasks.patch.assert_not_awaited()
@@ -465,7 +468,7 @@ class TestAuthParity:
     ) -> None:
         """A cookie-only admin cannot DELETE the remote class (no Bearer -> 401)."""
         response = cookie_admin_client.delete(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         mock_tasks.delete.assert_not_awaited()
@@ -474,7 +477,7 @@ class TestAuthParity:
         self, non_admin_client: TestClient, mock_tasks: AsyncMock
     ) -> None:
         """A non-admin LIST is rejected before any remote group is fetched."""
-        response = non_admin_client.get("/api/sep/admin/settings/")
+        response = non_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_403_FORBIDDEN
         mock_tasks.get.assert_not_awaited()
 
@@ -483,7 +486,7 @@ class TestAuthParity:
     ) -> None:
         """A non-admin PATCH is rejected before the proxy runs."""
         response = non_admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
         mock_tasks.patch.assert_not_awaited()
@@ -493,7 +496,7 @@ class TestAuthParity:
     ) -> None:
         """A non-admin DELETE is rejected before the proxy runs."""
         response = non_admin_client.delete(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_403_FORBIDDEN
         mock_tasks.delete.assert_not_awaited()
@@ -508,7 +511,7 @@ class TestAuthParity:
         unsafe-method Bearer requirement.
         """
         mock_tasks.get.return_value = _tasks_list()
-        response = cookie_admin_client.get("/api/sep/admin/settings/")
+        response = cookie_admin_client.get("/api/extensions/admin/settings/")
         assert response.status_code == status.HTTP_200_OK
         classes = [g["setting_class"] for g in response.json()["groups"]]
         assert "TasksSettings" in classes
@@ -531,7 +534,7 @@ class TestProxyErrorSplit:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="tasks down"
         )
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "tasks down"}
@@ -542,7 +545,7 @@ class TestProxyErrorSplit:
         """A connection-level failure on a DETAIL read becomes a 502."""
         mock_tasks.get.side_effect = OSError("conn refused")
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "conn refused"}
@@ -555,7 +558,7 @@ class TestProxyErrorSplit:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
         )
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "boom"}
@@ -566,7 +569,7 @@ class TestProxyErrorSplit:
         """A connection-level failure on a PATCH becomes a 502."""
         mock_tasks.patch.side_effect = OSError("conn refused")
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "conn refused"}
@@ -579,7 +582,7 @@ class TestProxyErrorSplit:
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="boom"
         )
         response = admin_client.delete(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "boom"}
@@ -590,7 +593,7 @@ class TestProxyErrorSplit:
         """A connection-level failure on a DELETE becomes a 502."""
         mock_tasks.delete.side_effect = OSError("conn refused")
         response = admin_client.delete(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "conn refused"}
@@ -608,7 +611,7 @@ class TestProxyErrorSplit:
             status_code=status.HTTP_409_CONFLICT, detail="cannot be overridden"
         )
         response = admin_client.delete(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_409_CONFLICT
         assert response.json() == {"detail": "cannot be overridden"}
@@ -628,7 +631,7 @@ class TestProxyResponseValidation:
         """A DETAIL payload that fails ``SettingResponse`` validation is a 500."""
         mock_tasks.get.return_value = {"bad": "x"}
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -638,7 +641,7 @@ class TestProxyResponseValidation:
         """A PATCH response that is not a list (here ``None``) surfaces as 500."""
         mock_tasks.patch.return_value = None
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
         mock_tasks.patch.assert_awaited_once()
@@ -649,7 +652,7 @@ class TestProxyResponseValidation:
         """A PATCH list whose items fail validation surfaces as 500."""
         mock_tasks.patch.return_value = [{"bad": "x"}]
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
         assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
 
@@ -671,7 +674,7 @@ class TestRemoteProvenance:
         mock_tasks.patch.return_value = [upstream]
 
         response = admin_client.patch(
-            "/api/sep/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
+            "/api/extensions/admin/settings/TasksSettings", json={TASKS_KEY: 7200}
         )
 
         assert response.status_code == status.HTTP_200_OK
@@ -692,7 +695,7 @@ class TestRemoteProvenance:
         mock_tasks.get.return_value = _tasks_setting(has_override=True)
 
         response = admin_client.get(
-            f"/api/sep/admin/settings/TasksSettings/{TASKS_KEY}"
+            f"/api/extensions/admin/settings/TasksSettings/{TASKS_KEY}"
         )
 
         assert response.status_code == status.HTTP_200_OK

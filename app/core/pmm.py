@@ -65,7 +65,7 @@ async def create_pmm_annotation(
     schedule this via ``asyncio.create_task()`` for non-blocking behavior;
     awaiting directly blocks for up to ``settings.PMM.annotations_timeout`` seconds.
 
-    :param text: Annotation text (e.g. ``"SEP backup_data - STARTED"``).
+    :param text: Annotation text (e.g. ``"PMM Extensions: backup_data - STARTED"``).
     :type text: str
     :param node_name: PMM node name from execution target.
     :type node_name: str
@@ -140,9 +140,9 @@ async def annotate_task_event(
     node_name = safe_meta.get("_pmm_node_name") or target
 
     await create_pmm_annotation(
-        text=f"SEP {task_name} - {event}",
+        text=f"PMM Extensions: {task_name} - {event}",
         node_name=node_name,
-        tags=["sep", task_name, event.lower()],
+        tags=["pmm-extensions", task_name, event.lower()],
         service_names=service_names,
     )
 

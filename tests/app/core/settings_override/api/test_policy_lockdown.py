@@ -40,11 +40,11 @@ from app.core.settings_override.models import SettingClassEnum
 from app.core.settings_override.registry import ReloadClassification
 from app.core.utils import json_serializer
 from app.inventory.config import inventory_settings, InventorySettings
-from app.sep.config import sep_settings, SEPSettings
+from app.sep.config import ExtensionsSettings, sep_settings
 from app.tasks.config import tasks_settings, TasksSettings
 from tests.app.core.settings_override.conftest import (
+    EXTENSIONS_SETTINGS_TOKEN,
     insert_override_row,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -53,7 +53,7 @@ from tests.app.db_schema import apply_schema
 ANNOTATIONS_KEY = "Settings.PMM__annotations_enabled"
 LOGGING_KEY = "Settings.LOGGING"
 SETTINGS_URL = f"/settings/{SettingClassEnum.SETTINGS.value}"
-SEP_URL = f"/settings/{SettingClassEnum.SEP_SETTINGS.value}"
+SEP_URL = f"/settings/{SettingClassEnum.EXTENSIONS_SETTINGS.value}"
 TASKS_URL = f"/settings/{SettingClassEnum.TASKS_SETTINGS.value}"
 INVENTORY_URL = f"/settings/{SettingClassEnum.INVENTORY_SETTINGS.value}"
 
@@ -91,7 +91,7 @@ def client_fixture(override_session: AsyncSession) -> Iterator[TestClient]:
 
     classes = [
         (SettingClassEnum.SETTINGS, Settings, settings),
-        (SettingClassEnum.SEP_SETTINGS, SEPSettings, sep_settings),
+        (SettingClassEnum.EXTENSIONS_SETTINGS, ExtensionsSettings, sep_settings),
         (SettingClassEnum.TASKS_SETTINGS, TasksSettings, tasks_settings),
         (SettingClassEnum.INVENTORY_SETTINGS, InventorySettings, inventory_settings),
     ]
@@ -331,13 +331,13 @@ class TestReporting:
         self, client: TestClient, restrict: Callable[..., None]
     ) -> None:
         """Assert LIST reports locked and allowed fields with their gated reload."""
-        restrict("SEPSettings.SYNC_REFRESH_TIME")
+        restrict("ExtensionsSettings.SYNC_REFRESH_TIME")
         response = client.get("/settings/")
         assert response.status_code == status.HTTP_200_OK
         groups = {group["setting_class"]: group for group in response.json()["groups"]}
         reloads = {
             field["key"]: field["reload"]
-            for field in groups[SettingClassEnum.SEP_SETTINGS.value]["settings"]
+            for field in groups[SettingClassEnum.EXTENSIONS_SETTINGS.value]["settings"]
         }
         assert reloads["INVENTORY_ENDPOINT"] == (
             ReloadClassification.NOT_OVERRIDABLE.value
@@ -370,7 +370,7 @@ class TestDeleteGate:
         """Assert a stale row for a now-locked key is removable."""
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key="INVENTORY_ENDPOINT",
             value="https://stale.example.com",
             is_active=True,
@@ -381,7 +381,7 @@ class TestDeleteGate:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
                 key="INVENTORY_ENDPOINT",
             )
             == 0
@@ -401,7 +401,7 @@ class TestDeleteGate:
         restrict: Callable[..., None],
     ) -> None:
         """Assert an explicitly not-overridable field keeps its 409 answer."""
-        restrict("SEPSettings.DIAGNOSTICS_DELIVERY")
+        restrict("ExtensionsSettings.DIAGNOSTICS_DELIVERY")
         response = client.delete(f"{SEP_URL}/DIAGNOSTICS_DELIVERY")
         assert response.status_code == status.HTTP_409_CONFLICT
 
@@ -591,7 +591,7 @@ class TestLegacyCasedOverrideRows:
         """
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=self._LEGACY_TOP,
             value="https://stale.example.com",
             is_active=True,
@@ -601,7 +601,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
             )
             == 0
         )
@@ -616,7 +616,7 @@ class TestLegacyCasedOverrideRows:
         """Assert a withheld top-level legacy row is still found and deleted."""
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=self._LEGACY_TOP,
             value="https://stale.example.com",
             is_active=True,
@@ -627,7 +627,7 @@ class TestLegacyCasedOverrideRows:
         assert (
             await SettingsOverrideManager.count(
                 override_session,
-                setting_class=SEP_SETTINGS_TOKEN,
+                setting_class=EXTENSIONS_SETTINGS_TOKEN,
             )
             == 0
         )
@@ -702,7 +702,7 @@ class TestLegacyCasedOverrideRows:
         """
         await insert_override_row(
             override_session,
-            setting_class=SEP_SETTINGS_TOKEN,
+            setting_class=EXTENSIONS_SETTINGS_TOKEN,
             key=self._LEGACY_TOP,
             value="https://stale.example.com",
             is_active=True,
@@ -715,7 +715,7 @@ class TestLegacyCasedOverrideRows:
         assert applied["value"] == new_value
         assert applied["has_override"] is True
         rows = await SettingsOverrideManager.list(
-            override_session, setting_class=SEP_SETTINGS_TOKEN
+            override_session, setting_class=EXTENSIONS_SETTINGS_TOKEN
         )
         assert len(rows) == 1
         assert rows[0].key == self._CANONICAL_TOP

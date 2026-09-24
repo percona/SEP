@@ -72,10 +72,10 @@ from app.tasks.config import tasks_settings
 from tests.app.alembic_paths import ALEMBIC_INI
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    EXTENSIONS_SETTINGS_TOKEN,
     LONG_USERNAME_LENGTH,
     PMM_API_KEY,
     ROUTING_KEY,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
@@ -101,6 +101,11 @@ _CREDENTIAL_PASSWORD = "inv-secret"
 #: revision's downgrade is its own inverse rather than the broad helper's.
 _PMM_CREDENTIAL_ENDPOINT = "https://pmm-user:pmm-secret@pmm.example.com:8443/"
 
+#: The token the service settings' rows carried before ``ee2b220c8c73`` renamed
+#: it. The rows below are seeded beneath the encryption revisions, so they carry
+#: it too, and are read back at heads under :data:`EXTENSIONS_SETTINGS_TOKEN`.
+_LEGACY_SEP_SETTINGS_TOKEN = "SEP_SETTINGS"
+
 _SEED_ROWS = [
     (
         SETTINGS_TOKEN,
@@ -115,7 +120,7 @@ _SEED_ROWS = [
         [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
     ),
     (TASKS_SETTINGS_TOKEN, "STALENESS_THRESHOLD_SECONDS", 7200),
-    (SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
+    (_LEGACY_SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
 ]
 
 # The SEP and Tasks revisions immediately below ``add_setting_override_table``
@@ -570,7 +575,7 @@ def test_shared_db_secret_rows_are_encrypted_by_the_sep_track(shared_postgres_db
     provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
     assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
     assert provider["PROVIDER"] == "pagerduty"
-    endpoint = urlparse(stored[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")])
+    endpoint = urlparse(stored[(EXTENSIONS_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")])
     assert stored_plaintext(endpoint.password) == _CREDENTIAL_PASSWORD
     assert endpoint.username == "inv-user"
     assert endpoint.hostname == "inventory.internal"
@@ -789,7 +794,7 @@ def test_shared_db_long_actor_round_trips(shared_postgres_db):
                 text(
                     "INSERT INTO settingoverride "
                     "(setting_class, key, value, is_active, created_at, updated_by) "
-                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
+                    "VALUES ('EXTENSIONS_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
                     ":actor)"
                 ),
                 {"actor": actor},
@@ -817,7 +822,7 @@ def test_shared_db_downgrade_drops_updated_by_and_keeps_the_rows(shared_postgres
                 text(
                     "INSERT INTO settingoverride "
                     "(setting_class, key, value, is_active, created_at, updated_by) "
-                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
+                    "VALUES ('EXTENSIONS_SETTINGS', 'SYNC_REFRESH_TIME', '5', true, now(), "
                     "'alice')"
                 )
             )
@@ -891,7 +896,7 @@ def test_sqlite_updated_by_round_trips_through_batch_alter(sep_sqlite_alembic_co
                 text(
                     "INSERT INTO settingoverride "
                     "(setting_class, key, value, is_active, created_at, updated_by) "
-                    "VALUES ('SEP_SETTINGS', 'SYNC_REFRESH_TIME', '5', 1, "
+                    "VALUES ('EXTENSIONS_SETTINGS', 'SYNC_REFRESH_TIME', '5', 1, "
                     "'2026-01-01 00:00:00', 'alice')"
                 )
             )

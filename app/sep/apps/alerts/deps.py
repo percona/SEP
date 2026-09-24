@@ -43,7 +43,7 @@ from app.sep.deps import (
 
 logger = logging.getLogger(__name__)
 
-PAGERDUTY_CONTACT_POINT_NAME = "SEP PagerDuty"
+PAGERDUTY_CONTACT_POINT_NAME = "PMM Extensions PagerDuty"
 
 BACKUPS_LIMIT_MAX = 100
 _alerts_backups_pagination_dep = make_pagination_dep(max_limit=BACKUPS_LIMIT_MAX)
@@ -55,7 +55,7 @@ AlertsBackupsPaginationDep: TypeAlias = Annotated[
 def find_pagerduty_contact_point(
     contact_points: list[ContactPoint],
 ) -> ContactPoint | None:
-    """Find the SEP PagerDuty contact point in a list of contact points.
+    """Find the PMM Extensions PagerDuty contact point in a list of contact points.
 
     :param contact_points: The list of contact points to search.
     :return: The matching contact point, or ``None`` if not found.
@@ -219,7 +219,7 @@ async def ensure_pagerduty_notification_route(
     policy.routes.append(
         {
             "receiver": contact_point_name,
-            "object_matchers": [["service", "=", "sep"]],
+            "object_matchers": [["service", "=", "pmm-extensions"]],
         }
     )
     await pmm_api.update_notification_policy(policy)

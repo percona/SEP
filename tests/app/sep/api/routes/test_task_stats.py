@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP task-stats JSON API route at ``/api/sep/task-stats/{task_name}``."""
+"""Tests for the SEP task-stats JSON API route at ``/api/extensions/task-stats/{task_name}``."""
 
 from collections.abc import Iterator
 from urllib.parse import quote
@@ -28,7 +28,7 @@ from tests.app.sep.path_unsafe_task_names import PATH_PARAM_UNSAFE_TASKS
 
 
 class TestSepTaskStatsEndpoint:
-    """Tests for ``GET /api/sep/task-stats/{task_name}`` proxy behavior."""
+    """Tests for ``GET /api/extensions/task-stats/{task_name}`` proxy behavior."""
 
     def test_returns_upstream_stats_payload(
         self,
@@ -48,7 +48,7 @@ class TestSepTaskStatsEndpoint:
             "last_finished_at": "2026-05-21T10:00:00+00:00",
         }
         mock_task_api_dep.get.return_value = payload
-        response = test_client.get("/api/sep/task-stats/my-task")
+        response = test_client.get("/api/extensions/task-stats/my-task")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == payload
 
@@ -59,7 +59,7 @@ class TestSepTaskStatsEndpoint:
     ) -> None:
         """Call ``tasks_api.get('/stats/{task_name}')`` with the URL path param."""
         mock_task_api_dep.get.return_value = {}
-        test_client.get("/api/sep/task-stats/some-task-name")
+        test_client.get("/api/extensions/task-stats/some-task-name")
         mock_task_api_dep.get.assert_called_once_with("/stats/some-task-name")
 
     def test_tasks_failure_returns_502(
@@ -69,7 +69,7 @@ class TestSepTaskStatsEndpoint:
     ) -> None:
         """Return ``502`` + ``{"detail": ...}`` on upstream HTTP failure."""
         mock_task_api_dep.get.side_effect = HTTPBadGatewayException("tasks unreachable")
-        response = test_client.get("/api/sep/task-stats/my-task")
+        response = test_client.get("/api/extensions/task-stats/my-task")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "tasks unreachable"}
 
@@ -80,13 +80,13 @@ class TestSepTaskStatsEndpoint:
     ) -> None:
         """Return ``502`` + ``{"detail": ...}`` when the Tasks API raises an OSError."""
         mock_task_api_dep.get.side_effect = OSError("connection refused")
-        response = test_client.get("/api/sep/task-stats/my-task")
+        response = test_client.get("/api/extensions/task-stats/my-task")
         assert response.status_code == status.HTTP_502_BAD_GATEWAY
         assert response.json() == {"detail": "connection refused"}
 
 
 class TestSepTaskStatsAuth:
-    """Tests for ``/api/sep/task-stats/{task_name}`` authentication enforcement."""
+    """Tests for ``/api/extensions/task-stats/{task_name}`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:
@@ -103,7 +103,7 @@ class TestSepTaskStatsAuth:
     ) -> None:
         """Reject anonymous requests with a JSON 401 response."""
         response = unauthenticated_client.get(
-            "/api/sep/task-stats/foo", follow_redirects=False
+            "/api/extensions/task-stats/foo", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")
@@ -121,6 +121,8 @@ class TestSepTaskStatsPathGuard:
         task_name: str,
     ) -> None:
         """Reject a name that would restructure the upstream stats path."""
-        response = test_client.get(f"/api/sep/task-stats/{quote(task_name, safe='')}")
+        response = test_client.get(
+            f"/api/extensions/task-stats/{quote(task_name, safe='')}"
+        )
         assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         mock_task_api_dep.get.assert_not_called()

@@ -13,12 +13,12 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define the ``/api/sep/app-info`` JSON endpoint for shell metadata.
+"""Define the ``/api/extensions/app-info`` JSON endpoint for shell metadata.
 
 Expose the rendered sidebar footer text so the React frontend mirrors the
 legacy Jinja interface. The value comes from the shared
 :func:`app.sep.deps.render_footer_text` helper, which reads the live
-``FOOTER_TEMPLATE`` hot setting per request so a ``SEP__FOOTER_TEMPLATE``
+``FOOTER_TEMPLATE`` hot setting per request so an ``EXTENSIONS__FOOTER_TEMPLATE``
 override applies without restarting the application.
 """
 
@@ -31,7 +31,7 @@ router = APIRouter()
 
 
 class AppInfo(BaseModel):
-    """Represent the response of ``GET /api/sep/app-info``.
+    """Represent the response of ``GET /api/extensions/app-info``.
 
     :param footer_text: The rendered sidebar footer text (application summary
         and version by default).
@@ -47,7 +47,7 @@ async def get_app_info() -> AppInfo:
     Render ``footer_text`` from the shared :func:`render_footer_text` helper so
     the JSON endpoint and the legacy Jinja sidebar footer cannot drift. The
     helper reads the hot ``FOOTER_TEMPLATE`` setting per request, so a live
-    ``SEP__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
+    ``EXTENSIONS__FOOTER_TEMPLATE`` override is reflected without a restart. Access is
     gated by the router-level ``IsApiAuthenticated`` dependency.
 
     :return: The rendered footer text.

@@ -75,25 +75,25 @@ from app.core.settings_override.registry import (
 from app.core.utils import json_serializer
 from app.core.utils.fields import StrCredentialHttpUrl
 from app.inventory.config import InventorySettings
-from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
+from app.sep.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
 from app.sep.apps.framework.registry import collect_app_owned_settings_classes
-from app.sep.config import SEPSettings
+from app.sep.config import ExtensionsSettings
 from app.tasks.anonymizer.config import AnonymizerSettings
 from app.tasks.config import TasksSettings
 from tests.app.core.settings_override.conftest import (
     ALERT_SETTINGS_TOKEN,
+    EXTENSIONS_SETTINGS_TOKEN,
     INVENTORY_SETTINGS_TOKEN,
     PMM_API_KEY,
     PMM_ENDPOINT,
     ROUTING_KEY,
-    SEP_SETTINGS_TOKEN,
     SETTINGS_TOKEN,
     SNIPPETS_SETTINGS_TOKEN,
     TASKS_SETTINGS_TOKEN,
 )
 from tests.app.encryption_fixtures import is_stored_ciphertext, stored_plaintext
 
-_SEP_TRACK_CLASSES = (Settings, AlertSettings, SEPSettings)
+_SEP_TRACK_CLASSES = (Settings, AlertSettings, ExtensionsSettings)
 _TASKS_TRACK_CLASSES = (TasksSettings,)
 
 _DELIVERY_SECRETS = {"sn_api_key": "key-value", "client_token": "token-value"}
@@ -107,7 +107,7 @@ _SECRET_ROWS: list[tuple[str, str, Any]] = [
         [{"PROVIDER": "pagerduty", "routing_key": ROUTING_KEY}],
     ),
     (
-        SEP_SETTINGS_TOKEN,
+        EXTENSIONS_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS",
         {"endpoint": "https://intake.example.com/", "secrets": dict(_DELIVERY_SECRETS)},
     ),
@@ -115,7 +115,7 @@ _SECRET_ROWS: list[tuple[str, str, Any]] = [
 
 _NON_SECRET_ROWS: list[tuple[str, str, Any]] = [
     (SETTINGS_TOKEN, "LOGGING", "DEBUG"),
-    (SEP_SETTINGS_TOKEN, "SYNC_REFRESH_TIME", 11),
+    (EXTENSIONS_SETTINGS_TOKEN, "SYNC_REFRESH_TIME", 11),
 ]
 
 _CREDENTIAL_URL = "https://inv-user:hunter2@inv.example.com:8443/api"
@@ -125,10 +125,35 @@ _CREDENTIAL_PORT = 8443
 _CREDENTIAL_PATH = "/api"
 
 _CREDENTIAL_URL_ROWS: list[tuple[str, str, Any]] = [
-    (SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
-    (SEP_SETTINGS_TOKEN, "TASKS_ENDPOINT", _CREDENTIAL_URL),
+    (EXTENSIONS_SETTINGS_TOKEN, "INVENTORY_ENDPOINT", _CREDENTIAL_URL),
+    (EXTENSIONS_SETTINGS_TOKEN, "TASKS_ENDPOINT", _CREDENTIAL_URL),
     (SETTINGS_TOKEN, "PMM__endpoint", _CREDENTIAL_URL),
 ]
+
+#: The token every revision up to the class rename stored the service settings'
+#: rows under. The frozen revisions below predate that rename, so the rows they
+#: are fed carry it rather than the live :data:`EXTENSIONS_SETTINGS_TOKEN`.
+_LEGACY_SEP_SETTINGS_TOKEN = "SEP_SETTINGS"
+
+
+def _as_legacy(rows: list[tuple[str, str, Any]]) -> list[tuple[str, str, Any]]:
+    """Return ``rows`` with the live service-settings token swapped for the legacy one.
+
+    :param rows: Seed rows keyed by the live tokens.
+    :return: The same rows as a frozen revision found them stored.
+    """
+    return [
+        (
+            _LEGACY_SEP_SETTINGS_TOKEN if token == EXTENSIONS_SETTINGS_TOKEN else token,
+            key,
+            value,
+        )
+        for token, key, value in rows
+    ]
+
+
+_LEGACY_SECRET_ROWS = _as_legacy(_SECRET_ROWS)
+_LEGACY_CREDENTIAL_URL_ROWS = _as_legacy(_CREDENTIAL_URL_ROWS)
 
 
 @pytest.fixture(name="engine")
@@ -263,7 +288,7 @@ class TestUpgradeEncryptSecretOverrideValues:
         provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
         assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
         assert provider["PROVIDER"] == "pagerduty"
-        inputs = stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
+        inputs = stored[(EXTENSIONS_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
         assert {
             name: stored_plaintext(value) for name, value in inputs["secrets"].items()
         } == _DELIVERY_SECRETS
@@ -405,7 +430,7 @@ def test_encrypted_rows_are_not_plaintext(engine: Engine) -> None:
         stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]["routing_key"]
     )
     assert is_stored_ciphertext(
-        stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]["secrets"][
+        stored[(EXTENSIONS_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]["secrets"][
             "sn_api_key"
         ]
     )
@@ -591,7 +616,10 @@ def _secret_bearing_overridable_fields() -> set[tuple[type[BaseYamlSettings], st
     :return: The overridable secret-bearing fields of every override-exposed class.
     """
     exposed = [
-        *(settings_cls for _token, settings_cls, _proxy in SEP_ADMIN_SETTINGS_CLASSES),
+        *(
+            settings_cls
+            for _token, settings_cls, _proxy in EXTENSIONS_ADMIN_SETTINGS_CLASSES
+        ),
         *(entry.settings_cls for entry in collect_app_owned_settings_classes()),
         InventorySettings,
         TasksSettings,
@@ -620,13 +648,20 @@ def _frozen_coverage(glob: str) -> set[str]:
     :func:`test_secret_bearing_overridable_fields_are_pinned` is what carries the
     field-level signal, and a new field there is widened by editing the pin.
 
+    A token a later revision rewrote is reported under the token it was
+    rewritten to: the rows a family reached under ``SEP_SETTINGS`` are the rows
+    ``ee2b220c8c73`` carries forward as ``EXTENSIONS_SETTINGS``, so the family
+    answers for the live class those rows now belong to.
+
     :param glob: The revision-filename glob selecting one family.
     :return: The storage tokens the family's frozen replicas answer for.
     """
+    retokened = {_LEGACY_SEP_SETTINGS_TOKEN: EXTENSIONS_SETTINGS_TOKEN}
     return {
-        setting_class_token(frozen_cls)
+        retokened.get(token, token)
         for track in _TRACKS
         for frozen_cls in _frozen_classes(glob, track)
+        for token in [setting_class_token(frozen_cls)]
     }
 
 
@@ -747,7 +782,7 @@ def test_secret_bearing_overridable_fields_are_pinned() -> None:
         ),
         (AlertSettings, "PROVIDERS", frozenset({("[].routing_key", _SECRET_LEAF)})),
         (
-            SEPSettings,
+            ExtensionsSettings,
             "DIAGNOSTICS_DELIVERY_INPUTS",
             frozenset(
                 {(".endpoint", _CREDENTIAL_URL_LEAF), (".secrets.*", _SECRET_LEAF)}
@@ -775,7 +810,10 @@ def _credential_url_bearing_overridable_fields() -> set[
     :return: The overridable credential-URL-bearing fields of every exposed class.
     """
     exposed = [
-        *(settings_cls for _token, settings_cls, _proxy in SEP_ADMIN_SETTINGS_CLASSES),
+        *(
+            settings_cls
+            for _token, settings_cls, _proxy in EXTENSIONS_ADMIN_SETTINGS_CLASSES
+        ),
         *(entry.settings_cls for entry in collect_app_owned_settings_classes()),
         InventorySettings,
         TasksSettings,
@@ -833,10 +871,14 @@ def test_credential_url_overridable_fields_are_pinned() -> None:
                 {(".api_key", _SECRET_LEAF), (".endpoint", _CREDENTIAL_URL_LEAF)}
             ),
         ),
-        (SEPSettings, "INVENTORY_ENDPOINT", frozenset({("", _CREDENTIAL_URL_LEAF)})),
-        (SEPSettings, "TASKS_ENDPOINT", frozenset({("", _CREDENTIAL_URL_LEAF)})),
         (
-            SEPSettings,
+            ExtensionsSettings,
+            "INVENTORY_ENDPOINT",
+            frozenset({("", _CREDENTIAL_URL_LEAF)}),
+        ),
+        (ExtensionsSettings, "TASKS_ENDPOINT", frozenset({("", _CREDENTIAL_URL_LEAF)})),
+        (
+            ExtensionsSettings,
             "DIAGNOSTICS_DELIVERY_INPUTS",
             frozenset(
                 {(".endpoint", _CREDENTIAL_URL_LEAF), (".secrets.*", _SECRET_LEAF)}
@@ -866,7 +908,7 @@ class TestCredentialUrlOverrideValues:
             _SEP_TRACK_CLASSES,
         )
 
-        stored = _stored(engine)[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]
+        stored = _stored(engine)[(EXTENSIONS_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]
         parsed = urlparse(stored)
         assert is_stored_ciphertext(parsed.password)
         assert parsed.hostname == _CREDENTIAL_HOST
@@ -1069,7 +1111,13 @@ def _replica_classes(glob: str, track: str) -> set[type[BaseModel]]:
 #: never told about.
 _FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
     ("sep", SETTINGS_TOKEN, "SECRET_KEY", "settings-secret-key", _SECRET_LEAF),
-    ("sep", SETTINGS_TOKEN, "SEP_INTERNAL_TOKEN", "internal-token", _SECRET_LEAF),
+    (
+        "sep",
+        SETTINGS_TOKEN,
+        "SEP_INTERNAL_TOKEN",
+        "internal-token",
+        _SECRET_LEAF,
+    ),
     ("sep", SETTINGS_TOKEN, "ENCRYPTION_KEY", "encryption-key", _SECRET_LEAF),
     ("sep", SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY, _SECRET_LEAF),
     ("sep", SETTINGS_TOKEN, "PMM__endpoint", _CREDENTIAL_URL, _CREDENTIAL_URL_LEAF),
@@ -1087,31 +1135,37 @@ _FROZEN_LEAF_CASES: list[tuple[str, str, str, str, str]] = [
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
-    ("sep", SEP_SETTINGS_TOKEN, "DATABASE__PASSWORD", "sep-db-password", _SECRET_LEAF),
     (
         "sep",
-        SEP_SETTINGS_TOKEN,
+        _LEGACY_SEP_SETTINGS_TOKEN,
+        "DATABASE__PASSWORD",
+        "sep-db-password",
+        _SECRET_LEAF,
+    ),
+    (
+        "sep",
+        _LEGACY_SEP_SETTINGS_TOKEN,
         "INVENTORY_ENDPOINT",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
         "sep",
-        SEP_SETTINGS_TOKEN,
+        _LEGACY_SEP_SETTINGS_TOKEN,
         "TASKS_ENDPOINT",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
         "sep",
-        SEP_SETTINGS_TOKEN,
+        _LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY__endpoint",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
     ),
     (
         "sep",
-        SEP_SETTINGS_TOKEN,
+        _LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS__endpoint",
         _CREDENTIAL_URL,
         _CREDENTIAL_URL_LEAF,
@@ -1153,13 +1207,13 @@ _FROZEN_CONTAINER_CASES: list[tuple[str, str, str, Any]] = [
     ),
     (
         "sep",
-        SEP_SETTINGS_TOKEN,
+        _LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY__secrets",
         dict(_DELIVERY_SECRETS),
     ),
     (
         "sep",
-        SEP_SETTINGS_TOKEN,
+        _LEGACY_SEP_SETTINGS_TOKEN,
         "DIAGNOSTICS_DELIVERY_INPUTS__secrets",
         dict(_DELIVERY_SECRETS),
     ),
@@ -1359,7 +1413,7 @@ class TestFrozenSecretRevisionOutcomes:
 
     def test_encrypts_every_secret_shape(self, engine: Engine) -> None:
         """Encrypt each stored shape's secret leaf exactly as the live classes did."""
-        _seed(engine, _SECRET_ROWS)
+        _seed(engine, _LEGACY_SECRET_ROWS)
 
         _run(
             engine,
@@ -1375,7 +1429,7 @@ class TestFrozenSecretRevisionOutcomes:
         provider = stored[(ALERT_SETTINGS_TOKEN, "PROVIDERS")][0]
         assert stored_plaintext(provider["routing_key"]) == ROUTING_KEY
         assert provider["PROVIDER"] == "pagerduty"
-        inputs = stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
+        inputs = stored[(_LEGACY_SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS")]
         assert {
             name: stored_plaintext(value) for name, value in inputs["secrets"].items()
         } == _DELIVERY_SECRETS
@@ -1435,7 +1489,7 @@ class TestFrozenSecretRevisionOutcomes:
             [
                 (SETTINGS_TOKEN, "PMM__api_key", PMM_API_KEY),
                 (
-                    SEP_SETTINGS_TOKEN,
+                    _LEGACY_SEP_SETTINGS_TOKEN,
                     "DIAGNOSTICS_DELIVERY_INPUTS__secrets",
                     dict(_DELIVERY_SECRETS),
                 ),
@@ -1450,7 +1504,9 @@ class TestFrozenSecretRevisionOutcomes:
 
         stored = _stored(engine)
         assert stored_plaintext(stored[(SETTINGS_TOKEN, "PMM__api_key")]) == PMM_API_KEY
-        secrets = stored[(SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS__secrets")]
+        secrets = stored[
+            (_LEGACY_SEP_SETTINGS_TOKEN, "DIAGNOSTICS_DELIVERY_INPUTS__secrets")
+        ]
         assert {
             name: stored_plaintext(value) for name, value in secrets.items()
         } == _DELIVERY_SECRETS
@@ -1505,7 +1561,7 @@ class TestFrozenSecretRevisionOutcomes:
     def test_a_second_run_rewrites_nothing(self, engine: Engine) -> None:
         """Keep one layer of ciphertext when the frozen classes reach the rows twice."""
         frozen = _frozen_classes(_SECRET_REVISION_GLOB, "sep")
-        _seed(engine, _SECRET_ROWS)
+        _seed(engine, _LEGACY_SECRET_ROWS)
         _run(engine, upgrade_encrypt_secret_override_values, frozen)
         after_first = _stored(engine)
 
@@ -1516,7 +1572,7 @@ class TestFrozenSecretRevisionOutcomes:
     def test_round_trips_back_to_the_seeded_plaintext(self, engine: Engine) -> None:
         """Restore every seeded shape byte-identically through the frozen downgrade."""
         frozen = _frozen_classes(_SECRET_REVISION_GLOB, "sep")
-        _seed(engine, _SECRET_ROWS)
+        _seed(engine, _LEGACY_SECRET_ROWS)
         before = _stored(engine)
         _run(engine, upgrade_encrypt_secret_override_values, frozen)
 
@@ -1560,7 +1616,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
         self, engine: Engine
     ) -> None:
         """Rewrite only the userinfo password of each stored credential URL."""
-        _seed(engine, _CREDENTIAL_URL_ROWS)
+        _seed(engine, _LEGACY_CREDENTIAL_URL_ROWS)
 
         _run(
             engine,
@@ -1570,7 +1626,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
 
         stored = _stored(engine)
         for key in ("INVENTORY_ENDPOINT", "TASKS_ENDPOINT"):
-            parsed = urlparse(stored[(SEP_SETTINGS_TOKEN, key)])
+            parsed = urlparse(stored[(_LEGACY_SEP_SETTINGS_TOKEN, key)])
             assert stored_plaintext(parsed.password) == _CREDENTIAL_PASSWORD
             assert parsed.hostname == _CREDENTIAL_HOST
             assert parsed.port == _CREDENTIAL_PORT
@@ -1608,7 +1664,7 @@ class TestFrozenCredentialUrlRevisionOutcomes:
     def test_round_trips_back_to_the_seeded_plaintext(self, engine: Engine) -> None:
         """Restore every seeded credential URL byte-identically."""
         frozen = _frozen_classes(_CREDENTIAL_URL_REVISION_GLOB, "sep")
-        _seed(engine, _CREDENTIAL_URL_ROWS)
+        _seed(engine, _LEGACY_CREDENTIAL_URL_ROWS)
         before = _stored(engine)
         _run(engine, upgrade_encrypt_credential_url_override_values, frozen)
 
@@ -1764,7 +1820,9 @@ class TestDowngradeUnmarkSecretOverrideValues:
 
         stored = _stored(engine)
         api_key = stored[(SETTINGS_TOKEN, "PMM")]["api_key"]
-        password = urlparse(stored[(SEP_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]).password
+        password = urlparse(
+            stored[(EXTENSIONS_SETTINGS_TOKEN, "INVENTORY_ENDPOINT")]
+        ).password
         assert marked_ciphertext(api_key) is None
         assert is_encrypted(api_key)
         assert decrypt(api_key) == PMM_API_KEY

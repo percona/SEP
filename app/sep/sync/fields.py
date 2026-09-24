@@ -16,7 +16,7 @@
 """Define the constrained syncer fields and the values their config accepts.
 
 A syncer threshold is configurable three ways — a ``SYNCERS[]`` entry in
-``settings.yaml``, JSON in ``SEP__SYNCERS``, or a ``SEP__SYNCER_EXTRA_KWARGS__<KEY>``
+``settings.yaml``, JSON in ``EXTENSIONS__SYNCERS``, or an ``EXTENSIONS__SYNCER_EXTRA_KWARGS__<KEY>``
 env leaf — and ``SyncOptions`` forwards every one of them verbatim, untyped. The
 syncer field and the load-time configuration check therefore have to agree on the
 accepted values, so the annotated type, the field name and the spelling quoted back to

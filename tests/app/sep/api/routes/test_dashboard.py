@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for the SEP dashboard stats JSON API route at ``/api/sep/dashboard/``."""
+"""Tests for the SEP dashboard stats JSON API route at ``/api/extensions/dashboard/``."""
 
 from collections.abc import Iterator
 from unittest.mock import AsyncMock
@@ -38,7 +38,7 @@ def mock_session_dep() -> Iterator[AsyncMock]:
 
 
 class TestDashboardStatsEndpoint:
-    """Tests for ``GET /api/sep/dashboard/`` happy-path and degradation cases."""
+    """Tests for ``GET /api/extensions/dashboard/`` happy-path and degradation cases."""
 
     def test_returns_all_counts_no_error_header(
         self,
@@ -67,7 +67,7 @@ class TestDashboardStatsEndpoint:
                 {"id": "nomad-3", "name": "host-3", "address": "10.0.0.3"},
             ],
         ]
-        response = test_client.get("/api/sep/dashboard/")
+        response = test_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {
             "nodes": 42,
@@ -97,7 +97,7 @@ class TestDashboardStatsEndpoint:
             {"items": [], "total": 3, "offset": 0, "limit": 0},
             [],
         ]
-        response = test_client.get("/api/sep/dashboard/")
+        response = test_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["nodes"] == 0
@@ -123,7 +123,7 @@ class TestDashboardStatsEndpoint:
             {"items": [], "total": 0, "offset": 0, "limit": 0},
             [],
         ]
-        response = test_client.get("/api/sep/dashboard/")
+        response = test_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json()["nodes"] == 0
         assert response.headers[UPSTREAM_ERROR_HEADER] == "nodes"
@@ -143,7 +143,7 @@ class TestDashboardStatsEndpoint:
         )
         mock_inventory_api_dep.get.return_value = {"nodes": 8}
         mock_task_api_dep.get.side_effect = OSError("tasks unreachable")
-        response = test_client.get("/api/sep/dashboard/")
+        response = test_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["tasks"] == 0
@@ -170,7 +170,7 @@ class TestDashboardStatsEndpoint:
             {"items": [], "total": 2, "offset": 0, "limit": 0},
             [{"id": "nomad-1", "name": "n1", "address": "10.0.0.1"}],
         ]
-        response = test_client.get("/api/sep/dashboard/")
+        response = test_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["snippets"] == 0
@@ -197,14 +197,14 @@ class TestDashboardStatsEndpoint:
             {"items": [], "total": 0, "offset": 0, "limit": 0},
             [],
         ]
-        response = test_client.get("/api/sep/dashboard/")
+        response = test_client.get("/api/extensions/dashboard/")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == {"nodes": 0, "tasks": 0, "snippets": 0, "targets": 0}
         assert UPSTREAM_ERROR_HEADER not in response.headers
 
 
 class TestDashboardStatsAuth:
-    """Tests for ``/api/sep/dashboard/`` authentication enforcement."""
+    """Tests for ``/api/extensions/dashboard/`` authentication enforcement."""
 
     @pytest.fixture
     def unauthenticated_client(self) -> Iterator[TestClient]:
@@ -221,7 +221,7 @@ class TestDashboardStatsAuth:
     ) -> None:
         """Reject anonymous requests with a JSON 401 response."""
         response = unauthenticated_client.get(
-            "/api/sep/dashboard/", follow_redirects=False
+            "/api/extensions/dashboard/", follow_redirects=False
         )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
         assert response.headers["content-type"].startswith("application/json")

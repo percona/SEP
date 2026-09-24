@@ -74,6 +74,12 @@ _SEP_PRE_SYNC_RUN_STATE_REVISION = "74720aeda25b"
 #: The add_sync_run_state_and_entity_absence revision under test.
 _SEP_SYNC_RUN_STATE_REVISION = "867df844fe17"
 
+#: The revision preceding rename_sep_settings_override_token: override rows
+#: for the service settings class are still stored under ``SEP_SETTINGS``.
+_SEP_PRE_RETOKEN_REVISION = "cbc3026013de"
+#: The rename_sep_settings_override_token revision under test.
+_SEP_RETOKEN_REVISION = "ee2b220c8c73"
+
 _ORPHAN_HEADS_LOGGER = "app.sep.migrations._orphan_heads"
 
 #: A table owned by neither SQLModel.metadata nor the beat library, so the
@@ -648,7 +654,7 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, 
     try:
         with engine.begin() as conn:
             _insert_override(conn, "UNREGISTERED_SETTINGS")
-            _insert_override(conn, "SEP_SETTINGS")
+            _insert_override(conn, "EXTENSIONS_SETTINGS")
     finally:
         engine.dispose()
 
@@ -675,6 +681,45 @@ def test_setting_class_check_downgrade_deletes_unknown_rows(sep_alembic_config, 
                 _insert_override(conn, "UNREGISTERED_SETTINGS")
     finally:
         engine.dispose()
+
+
+def _setting_classes(sync_url: str) -> list[str]:
+    """Return every stored ``settingoverride.setting_class``, sorted."""
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            rows = conn.exec_driver_sql(
+                "SELECT setting_class FROM settingoverride"
+            ).fetchall()
+    finally:
+        engine.dispose()
+    return sorted(row[0] for row in rows)
+
+
+def test_retoken_revision_moves_the_service_settings_rows_and_back(
+    sep_alembic_config,
+):
+    """Rewrite ``SEP_SETTINGS`` rows to ``EXTENSIONS_SETTINGS`` and restore them.
+
+    A row of another class is seeded alongside to prove the rewrite is scoped to
+    the renamed token.
+    """
+    cfg, sync_url = sep_alembic_config
+    command.upgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+
+    engine = create_engine(sync_url)
+    try:
+        with engine.begin() as conn:
+            _insert_override(conn, "SEP_SETTINGS")
+            _insert_override(conn, "TASKS_SETTINGS")
+    finally:
+        engine.dispose()
+
+    command.upgrade(cfg, _SEP_RETOKEN_REVISION)
+    assert _setting_classes(sync_url) == ["EXTENSIONS_SETTINGS", "TASKS_SETTINGS"]
+
+    command.downgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
+    assert _setting_classes(sync_url) == ["SEP_SETTINGS", "TASKS_SETTINGS"]
 
 
 def test_app_lifecycle_backfill_maps_enabled_to_state(sep_alembic_config):
@@ -951,8 +996,8 @@ def test_check_is_clean_after_upgrade_to_heads(tmp_path: Path) -> None:
     """
     env = {
         **os.environ,
-        "SEP__DATABASE__HOST": "",
-        "SEP__DATABASE__NAME": str(tmp_path / "sep.sqlite"),
+        "EXTENSIONS__DATABASE__HOST": "",
+        "EXTENSIONS__DATABASE__NAME": str(tmp_path / "sep.sqlite"),
     }
     for verb in (("upgrade", "heads"), ("check",)):
         result = subprocess.run(

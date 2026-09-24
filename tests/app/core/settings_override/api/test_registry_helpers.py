@@ -60,7 +60,7 @@ from app.core.settings_override.resolution import (
 )
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import CredentialHttpUrl, StrHttpUrl
-from app.sep.config import DeliveryPlanInputs, SEPSettings
+from app.sep.config import DeliveryPlanInputs, ExtensionsSettings
 from app.tasks.config import TasksSettings
 from app.tasks.execution.executors.nomad.models import NomadExecutor
 
@@ -203,7 +203,7 @@ def test_dump_field_value_redacts_secret_str() -> None:
 
 def test_dump_field_value_redacts_credential_http_url() -> None:
     """A credential-bearing URL is redacted by its field metadata serializer."""
-    field = SEPSettings.model_fields["INVENTORY_ENDPOINT"]
+    field = ExtensionsSettings.model_fields["INVENTORY_ENDPOINT"]
     url = TypeAdapter(CredentialHttpUrl).validate_python(
         "http://inv-user:inv-secret@inventory.internal:8080"
     )
@@ -241,7 +241,7 @@ def test_is_credential_url_field_recognises_all_aliases() -> None:
     it through :func:`annotated_type` rather than reading ``.annotation``.
     """
     for field in (
-        SEPSettings.model_fields["INVENTORY_ENDPOINT"],
+        ExtensionsSettings.model_fields["INVENTORY_ENDPOINT"],
         PMMSettings.model_fields["endpoint"],
         CeleryOptions.model_fields["broker_url"],
         NomadExecutor.model_fields["endpoint"],
@@ -261,8 +261,8 @@ class TestCredentialUrlPredicatePair:
     @pytest.mark.parametrize(
         ("settings_cls", "field_name"),
         [
-            (SEPSettings, "INVENTORY_ENDPOINT"),
-            (SEPSettings, "TASKS_ENDPOINT"),
+            (ExtensionsSettings, "INVENTORY_ENDPOINT"),
+            (ExtensionsSettings, "TASKS_ENDPOINT"),
             (PMMSettings, "endpoint"),
             (NomadExecutor, "endpoint"),
             (DeliveryPlanInputs, "endpoint"),
@@ -282,7 +282,7 @@ class TestCredentialUrlPredicatePair:
         [
             (Settings, "PMM"),
             (Settings, "CELERY"),
-            (SEPSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
+            (ExtensionsSettings, "DIAGNOSTICS_DELIVERY_INPUTS"),
         ],
     )
     def test_a_model_typed_parent_reaches_one_without_being_one(
@@ -316,8 +316,8 @@ class TestCredentialUrlFieldsAreNotSecretBearing:
     @pytest.mark.parametrize(
         ("settings_cls", "key"),
         [
-            (SEPSettings, "INVENTORY_ENDPOINT"),
-            (SEPSettings, "TASKS_ENDPOINT"),
+            (ExtensionsSettings, "INVENTORY_ENDPOINT"),
+            (ExtensionsSettings, "TASKS_ENDPOINT"),
         ],
     )
     def test_a_top_level_credential_url_field_is_not_secret(
@@ -422,12 +422,12 @@ def test_iter_nested_leaf_keys_enumerates_secret_leaf() -> None:
 def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
     """A secret leaf response redacts the value and carries the canonical key_path."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
+        _SecretLeafParent, setting_class=ExtensionsSettings.__name__
     )
     leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
     assert leaf_meta is not None
     response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
+        setting_class=ExtensionsSettings.__name__,
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
@@ -441,13 +441,13 @@ def test_settings_response_redacts_secret_leaf_with_key_path() -> None:
 def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
     """LIST projection maps a missing nested segment to JSON ``null``."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
+        _SecretLeafParent, setting_class=ExtensionsSettings.__name__
     )
     proxy._set_snapshot({"GROUP": {"LABEL": "visible"}})
     leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
     assert leaf_meta is not None
     response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
+        setting_class=ExtensionsSettings.__name__,
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
@@ -460,7 +460,7 @@ def test_settings_response_serializes_missing_mapping_segment_as_null() -> None:
 def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None:
     """LIST projection renders an unresolved secret leaf as JSON ``null``."""
     proxy = OverridableSettingsProxy(
-        _SecretLeafParent, setting_class=SEPSettings.__name__
+        _SecretLeafParent, setting_class=ExtensionsSettings.__name__
     )
     proxy._set_snapshot(
         {"GROUP": _SecretLeafModel.model_construct(TOKEN=None, LABEL="public")}
@@ -468,7 +468,7 @@ def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None
     leaf_meta = resolve_nested_field_metadata(_SecretLeafParent, "GROUP__TOKEN")
     assert leaf_meta is not None
     response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
+        setting_class=ExtensionsSettings.__name__,
         settings_cls=_SecretLeafParent,
         proxy=proxy,
         field_meta=leaf_meta,
@@ -481,11 +481,11 @@ def test_settings_response_serializes_present_none_secret_leaf_as_null() -> None
 def test_settings_response_applicable_defaults_true() -> None:
     """Mark a field response applicable when no applicability predicate is given."""
     proxy = OverridableSettingsProxy(
-        _FixtureSettings, setting_class=SEPSettings.__name__
+        _FixtureSettings, setting_class=ExtensionsSettings.__name__
     )
     meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
     response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
+        setting_class=ExtensionsSettings.__name__,
         settings_cls=_FixtureSettings,
         proxy=proxy,
         field_meta=meta,
@@ -497,11 +497,11 @@ def test_settings_response_applicable_defaults_true() -> None:
 def test_settings_response_honors_applicability_predicate() -> None:
     """Mark the field response not applicable when the predicate returns ``False``."""
     proxy = OverridableSettingsProxy(
-        _FixtureSettings, setting_class=SEPSettings.__name__
+        _FixtureSettings, setting_class=ExtensionsSettings.__name__
     )
     meta = next(m for m in iter_class_fields(_FixtureSettings) if m.key == "HOT_BOOL")
     response = _settings_response_from_field(
-        setting_class=SEPSettings.__name__,
+        setting_class=ExtensionsSettings.__name__,
         settings_cls=_FixtureSettings,
         proxy=proxy,
         field_meta=meta,
@@ -668,7 +668,7 @@ def _override_row(
     """
     return SettingOverride(
         id=row_id,
-        setting_class=SettingClassEnum.SEP_SETTINGS,
+        setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
         key=key,
         value=1,
         is_active=True,
@@ -691,7 +691,7 @@ def test_override_provenance_reports_the_rows_own_stamp() -> None:
         )
     ]
 
-    provenance = override_provenance_for_rows(SEPSettings, rows)
+    provenance = override_provenance_for_rows(ExtensionsSettings, rows)
 
     assert provenance["SYNC_REFRESH_TIME"] == SettingProvenance(
         updated_at=written_at, updated_by="alice"
@@ -703,7 +703,7 @@ def test_override_provenance_falls_back_to_created_at_for_a_legacy_row() -> None
     created_at = utc_now()
     rows = [_override_row("SYNC_REFRESH_TIME", row_id=1, created_at=created_at)]
 
-    provenance = override_provenance_for_rows(SEPSettings, rows)
+    provenance = override_provenance_for_rows(ExtensionsSettings, rows)
 
     assert provenance["SYNC_REFRESH_TIME"] == SettingProvenance(
         updated_at=created_at, updated_by=None
@@ -723,7 +723,7 @@ def test_override_provenance_promotes_a_nested_leaf_to_its_parent() -> None:
         )
     ]
 
-    provenance = override_provenance_for_rows(SEPSettings, rows)
+    provenance = override_provenance_for_rows(ExtensionsSettings, rows)
 
     expected = SettingProvenance(updated_at=written_at, updated_by="alice")
     assert provenance["APP_DRAIN"] == expected
@@ -755,7 +755,7 @@ def test_override_provenance_breaks_an_equal_stamp_tie_on_the_higher_id() -> Non
         ),
     ]
 
-    provenance = override_provenance_for_rows(SEPSettings, rows)
+    provenance = override_provenance_for_rows(ExtensionsSettings, rows)
 
     assert provenance["APP_DRAIN"].updated_by == "bob"
 
@@ -786,7 +786,7 @@ def test_override_provenance_tie_break_follows_creation_not_write_order() -> Non
     )
 
     provenance = override_provenance_for_rows(
-        SEPSettings,
+        ExtensionsSettings,
         [later_written_but_created_first, earlier_written_but_created_last],
     )
 
@@ -813,7 +813,7 @@ def test_override_provenance_prefers_the_later_stamp_over_the_higher_id() -> Non
         ),
     ]
 
-    provenance = override_provenance_for_rows(SEPSettings, rows)
+    provenance = override_provenance_for_rows(ExtensionsSettings, rows)
 
     assert provenance["APP_DRAIN"].updated_by == "alice"
 
@@ -844,7 +844,7 @@ def test_override_provenance_normalizes_a_naive_stamp() -> None:
         ),
     ]
 
-    provenance = override_provenance_for_rows(SEPSettings, rows)
+    provenance = override_provenance_for_rows(ExtensionsSettings, rows)
 
     assert provenance["APP_DRAIN"] == SettingProvenance(
         updated_at=aware, updated_by="bob"
@@ -853,4 +853,4 @@ def test_override_provenance_normalizes_a_naive_stamp() -> None:
 
 def test_override_provenance_is_empty_without_rows() -> None:
     """Return an empty mapping when the class has no active override rows."""
-    assert override_provenance_for_rows(SEPSettings, []) == {}
+    assert override_provenance_for_rows(ExtensionsSettings, []) == {}

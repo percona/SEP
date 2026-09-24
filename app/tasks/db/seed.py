@@ -81,7 +81,7 @@ STALENESS_PREAMBLE_SHELL = (
     "now=$(date +%s); "
     "elapsed=$((now - NOMAD_META_scheduled_at)); "
     'if [ "$elapsed" -gt "$NOMAD_META_staleness_threshold_seconds" ]; then '
-    'echo "SEP_STALE_SKIP: elapsed=$elapsed""s '
+    'echo "EXTENSIONS_STALE_SKIP: elapsed=$elapsed""s '
     'threshold=$NOMAD_META_staleness_threshold_seconds""s"; '
     "exit 75; "
     "fi; "
@@ -223,7 +223,7 @@ def _launch_check_shell(
 
     def abort(command: str) -> str:
         return (
-            f'echo "SEP_UNLAUNCHABLE: command={command} node=$NOMAD_META_target"; '
+            f'echo "EXTENSIONS_UNLAUNCHABLE: command={command} node=$NOMAD_META_target"; '
             f"exit {LAUNCH_CHECK_EXIT_CODE}"
         )
 
@@ -297,7 +297,7 @@ def _launch_check_shell(
             + resolve_or_abort(launches, launches)
         )
     announce = (
-        '[ -z "$stripped" ] || echo "SEP_SUDO_STRIPPED: node=$NOMAD_META_target"; '
+        '[ -z "$stripped" ] || echo "EXTENSIONS_SUDO_STRIPPED: node=$NOMAD_META_target"; '
         if allow_strip
         else ""
     )

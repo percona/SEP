@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Tests for SEP inventory selector JSON API routes under ``/api/sep/``."""
+"""Tests for SEP inventory selector JSON API routes under ``/api/extensions/``."""
 
 from unittest.mock import AsyncMock
 
@@ -26,7 +26,7 @@ from app.core.pagination import MAX_PAGINATION_LIMIT
 
 
 class TestSepServiceSchemasEndpoint:
-    """Tests for ``GET /api/sep/services/{service_id}/schemas``."""
+    """Tests for ``GET /api/extensions/services/{service_id}/schemas``."""
 
     def test_list_schemas(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
@@ -41,7 +41,7 @@ class TestSepServiceSchemasEndpoint:
             "offset": 0,
             "limit": 50,
         }
-        response = test_client.get("/api/sep/services/10/schemas")
+        response = test_client.get("/api/extensions/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [{"id": 1, "name": "db1"}, {"id": 2, "name": "db2"}]
 
@@ -56,7 +56,7 @@ class TestSepServiceSchemasEndpoint:
             "limit": 50,
         }
         response = test_client.get(
-            "/api/sep/services/10/schemas", params={"search": "my"}
+            "/api/extensions/services/10/schemas", params={"search": "my"}
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_called_once_with(
@@ -71,7 +71,7 @@ class TestSepServiceSchemasEndpoint:
         mock_inventory_api_dep.get.side_effect = HTTPNotFoundException(
             detail="Not Found"
         )
-        response = test_client.get("/api/sep/services/9999/schemas")
+        response = test_client.get("/api/extensions/services/9999/schemas")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
@@ -82,7 +82,7 @@ class TestSepServiceSchemasEndpoint:
         mock_inventory_api_dep.get.side_effect = HTTPServiceUnavailableException(
             detail="Inventory unavailable",
         )
-        response = test_client.get("/api/sep/services/10/schemas")
+        response = test_client.get("/api/extensions/services/10/schemas")
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
     def test_list_schemas_empty_when_upstream_returns_none(
@@ -90,13 +90,13 @@ class TestSepServiceSchemasEndpoint:
     ) -> None:
         """Return empty list when inventory returns a non-paginated null payload."""
         mock_inventory_api_dep.get.return_value = None
-        response = test_client.get("/api/sep/services/10/schemas")
+        response = test_client.get("/api/extensions/services/10/schemas")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
 
 class TestSepSchemaTablesEndpoint:
-    """Tests for ``GET /api/sep/schemas/{schema_id}/tables``."""
+    """Tests for ``GET /api/extensions/schemas/{schema_id}/tables``."""
 
     def test_list_tables(
         self, test_client: TestClient, mock_inventory_api_dep: AsyncMock
@@ -111,7 +111,7 @@ class TestSepSchemaTablesEndpoint:
             "offset": 0,
             "limit": 50,
         }
-        response = test_client.get("/api/sep/schemas/5/tables")
+        response = test_client.get("/api/extensions/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == [
             {"id": 1, "name": "users"},
@@ -129,7 +129,7 @@ class TestSepSchemaTablesEndpoint:
             "limit": 50,
         }
         response = test_client.get(
-            "/api/sep/schemas/5/tables", params={"search": "user"}
+            "/api/extensions/schemas/5/tables", params={"search": "user"}
         )
         assert response.status_code == status.HTTP_200_OK
         mock_inventory_api_dep.get.assert_called_once_with(
@@ -144,7 +144,7 @@ class TestSepSchemaTablesEndpoint:
         mock_inventory_api_dep.get.side_effect = HTTPNotFoundException(
             detail="Not Found"
         )
-        response = test_client.get("/api/sep/schemas/9999/tables")
+        response = test_client.get("/api/extensions/schemas/9999/tables")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []
 
@@ -156,7 +156,7 @@ class TestSepSchemaTablesEndpoint:
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Unauthorized",
         )
-        response = test_client.get("/api/sep/schemas/5/tables")
+        response = test_client.get("/api/extensions/schemas/5/tables")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
     def test_list_tables_empty_when_upstream_returns_empty_object(
@@ -164,6 +164,6 @@ class TestSepSchemaTablesEndpoint:
     ) -> None:
         """Return empty list when inventory returns a dict without items."""
         mock_inventory_api_dep.get.return_value = {}
-        response = test_client.get("/api/sep/schemas/5/tables")
+        response = test_client.get("/api/extensions/schemas/5/tables")
         assert response.status_code == status.HTTP_200_OK
         assert response.json() == []

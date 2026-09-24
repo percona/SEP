@@ -130,7 +130,7 @@ def test_the_service_principal_is_still_refused_by_a_route_admin_check(
     bearer_client: TestClient, mocker: MockerFixture
 ) -> None:
     """Refuse the principal on a route carrying its own ``IsAdminDep``."""
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
 
     response = bearer_client.patch(
         f"/admin/settings/{SettingClassEnum.TASKS_SETTINGS.value}",
@@ -151,7 +151,7 @@ async def test_the_service_principal_can_still_dispatch_an_execution(
     also pass on a 401 or a 500, which is exactly the silent breakage this gate
     risks for the scheduled writer.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     task = await TaskManager.create(
         session,
         TaskWrite.model_validate(
@@ -210,7 +210,7 @@ def test_the_log_stream_reconciliation_is_accepted_for_the_service_principal(
     This is the identity the SEP log stream sends, so a non-admin's stream still
     reaches its finish frame.
     """
-    mocker.patch.object(settings, "SEP_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(SERVICE_TOKEN))
     mock_executor.sync_task_history.return_value = created_task_with_history
 
     response = bearer_client.post(

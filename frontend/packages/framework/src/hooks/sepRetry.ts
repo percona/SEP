@@ -21,7 +21,7 @@ import { ApiError } from '@sep/api';
  * Shared React Query `retry` predicate for SEP API hooks.
  *
  * Never retry on auth failures (401/403), missing resources (404),
- * upstream-proxy failures (502 from `/api/sep/*` gateway routes), or
+ * upstream-proxy failures (502 from `/api/extensions/*` gateway routes), or
  * user-driven aborts (``kind === 'canceled'``) — those are deterministic
  * signals that won't change between retries. For anything else (transient
  * network blips, 5xx other than 502), retry up to twice for a total of 3

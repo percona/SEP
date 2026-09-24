@@ -16,7 +16,7 @@
 """Define the ``AppRegistry`` that drives SEP app mounting and metadata.
 
 The registry is the single iteration source for both mount loops and every
-``SEP.APPS`` metadata consumer. It imports each activated module and either
+``EXTENSIONS.APPS`` metadata consumer. It imports each activated module and either
 uses its exported ``app`` definition or synthesizes an implicit
 :class:`~app.sep.apps.framework.base.BaseApp` from the legacy ``App``
 settings entry, so legacy and definition-based apps coexist.
@@ -491,7 +491,7 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
     synthesize an implicit app from the legacy settings entry. Pure function of
     the activation list -- unit tests call it directly.
 
-    :param plugins: The ``SEP.APPS`` activation entries, in order.
+    :param plugins: The ``EXTENSIONS.APPS`` activation entries, in order.
     :return: The ordered registry.
     :rtype: AppRegistry
     """
@@ -535,7 +535,7 @@ def collect_app_owned_settings_classes(
     but is not marked HOT, fails fast at collection time rather than silently
     registering a beat-reseed callback that never fires.
 
-    :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
+    :param plugins: The ``EXTENSIONS.APPS`` activation entries to scan. Defaults to
         ``sep_settings.APPS``.
     :return: The merged app-owned settings entries.
     :raises TypeError: If a module's declaration is not a list of
@@ -604,7 +604,7 @@ def collect_inventory_reference_providers(
     app-owned settings classes there is no registry to collide with, so a
     duplicate declaration is simply unioned by the caller rather than rejected.
 
-    :param plugins: The ``SEP.APPS`` activation entries to scan. Defaults to
+    :param plugins: The ``EXTENSIONS.APPS`` activation entries to scan. Defaults to
         ``sep_settings.APPS``.
     :return: The declared providers.
     :raises TypeError: If a module's declaration is not a list of callables.

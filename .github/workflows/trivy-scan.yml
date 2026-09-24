@@ -69,7 +69,7 @@ jobs:
           docker build
           --build-context "localhost/sep:builder=docker-image://sep:builder"
           -f sidecar/Containerfile.sidecar
-          --build-arg SEP_RESTRICT_APPS=1
+          --build-arg EXTENSIONS_RESTRICT_APPS=1
           -t "sep:HEAD" .
 
       - name: Install Trivy

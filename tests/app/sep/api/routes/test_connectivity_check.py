@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-"""Define tests for the /api/sep/admin/connectivity-check endpoint."""
+"""Define tests for the /api/extensions/admin/connectivity-check endpoint."""
 
 import asyncio
 import ssl
@@ -49,7 +49,7 @@ from app.sep.clients.pmm import PMMRemoteAPI
 from app.sep.config import DeliveryPlanInputs, sep_settings
 from app.sep.main import sep_app
 
-ENDPOINT = "/api/sep/admin/connectivity-check/"
+ENDPOINT = "/api/extensions/admin/connectivity-check/"
 
 #: Full-sweep body naming every service (the frontend's "check all" shape).
 ALL_TARGETS = {"targets": ["pmm", "inventory", "tasks", "nomad"]}

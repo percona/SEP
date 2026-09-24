@@ -176,10 +176,10 @@ def test_classify_names_the_proxy_installed_settings_helpers():
     helper, typo = classify_ty_diagnostics.parse_diagnostics(
         _output(
             "tests/app/sep/routes/test_stream_logs.py:325:5: "
-            "warning[unresolved-attribute] Object of type `SEPSettings` has no "
+            "warning[unresolved-attribute] Object of type `ExtensionsSettings` has no "
             "attribute `_set_snapshot`",
             "tests/app/sep/routes/test_stream_logs.py:326:5: "
-            "warning[unresolved-attribute] Object of type `SEPSettings` has no "
+            "warning[unresolved-attribute] Object of type `ExtensionsSettings` has no "
             "attribute `PMM_typo`",
         )
     )

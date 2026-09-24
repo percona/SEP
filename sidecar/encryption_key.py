@@ -36,8 +36,8 @@ same ``<PREFIX>__DATABASE__*`` sources (environment, dotenv, ``SECRETS_DIR``
 file, YAML profile) while requiring no ``ENCRYPTION_KEY`` of their own, which
 the key-less path this helper runs on could not supply.
 
-Deployment inputs, all optional: ``SEP_STATE_DIR`` and
-``SEP_ENCRYPTION_PROBE_TIMEOUT``.
+Deployment inputs, all optional: ``EXTENSIONS_STATE_DIR`` and
+``EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT``.
 """
 
 import asyncio
@@ -143,7 +143,7 @@ class _SEPDatabase(_ServiceDatabase):
     :param DATABASE: The service's database connection options.
     """
 
-    SETTINGS_PREFIXES: ClassVar[list[str]] = ["SEP"]
+    SETTINGS_PREFIXES: ClassVar[list[str]] = ["EXTENSIONS"]
     DATABASE: DatabaseOptions = DatabaseOptions(NAME="sep.db")
 
 
@@ -187,7 +187,7 @@ def probe_timeout() -> float:
     :return: The bound in seconds.
     """
     return positive_timeout(
-        "SEP_ENCRYPTION_PROBE_TIMEOUT", DEFAULT_PROBE_TIMEOUT_SECONDS, warn
+        "EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT", DEFAULT_PROBE_TIMEOUT_SECONDS, warn
     )
 
 
@@ -340,7 +340,7 @@ def state_lock(directory: Path) -> Iterator[None]:
     ``umask`` narrows the mode at creation, the way ``write_persisted_token``
     in the token helper beside this one narrows it. Which of the two creates
     the directory changed here: key resolution runs ahead of the Grafana mint,
-    so on a ``SEP_STATE_DIR`` the image does not pre-create, this is the first
+    so on an ``EXTENSIONS_STATE_DIR`` the image does not pre-create, this is the first
     writer and owns the mode the other one used to set.
 
     :param directory: The state directory to lock within, created when absent.
@@ -391,7 +391,7 @@ def _acquire_lock(handle: TextIO, directory: Path) -> None:
                     f"minting together leave each unable to read the rows the "
                     f"other wrote. Check whether a second side-car runs against "
                     f"this state directory, or raise "
-                    f"SEP_ENCRYPTION_PROBE_TIMEOUT, which this bound follows. "
+                    f"EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT, which this bound follows. "
                     f"Nothing was minted or written."
                 ) from error
         else:
@@ -568,7 +568,7 @@ def _ciphertext_remedy() -> str:
         "Refusing to mint a new ENCRYPTION_KEY: a new key cannot decrypt values "
         "written under the old one, and every affected override would silently "
         f"revert to its YAML value. Restore {state_dir() / PERSISTED_FILENAME} "
-        "from a backup of the sep-state volume, pass the deployment's original "
+        "from a backup of the pmm-extensions-state volume, pass the deployment's original "
         "key as ENCRYPTION_KEY, or pass any newly generated key if this "
         "deployment was never encrypted and the value is plaintext that merely "
         "looks like a token."
@@ -588,8 +588,8 @@ def _unproven_remedy() -> str:
     return (
         "Refusing to mint a new ENCRYPTION_KEY without proving the deployment "
         "holds no data a new key could not decrypt. Bring the database up and "
-        "restart the container, check SEP_DB_HOST and SEP_DB_PORT, or raise "
-        "SEP_ENCRYPTION_PROBE_TIMEOUT. Nothing was minted or written."
+        "restart the container, check EXTENSIONS_DB_HOST and EXTENSIONS_DB_PORT, or raise "
+        "EXTENSIONS_ENCRYPTION_PROBE_TIMEOUT. Nothing was minted or written."
     )
 
 

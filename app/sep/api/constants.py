@@ -15,10 +15,10 @@
 
 """Shared constants for SEP proxy API routes."""
 
-UPSTREAM_ERROR_HEADER = "X-Sep-Upstream-Error"
+UPSTREAM_ERROR_HEADER = "X-Upstream-Error"
 """Response header carrying the upstream-failure detail string.
 
-SEP proxy routes (``/api/sep/...``) degrade gracefully when an upstream
+SEP proxy routes (``/api/extensions/...``) degrade gracefully when an upstream
 service (Tasks API, Inventory API) fails: the route returns a default-shaped
 empty payload with a ``200`` status so the React frontend can render its
 empty state, and attaches the upstream failure detail in this header so the
