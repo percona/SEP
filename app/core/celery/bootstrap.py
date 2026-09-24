@@ -217,7 +217,7 @@ def move_pre_rename_periodic_tasks(session_factory: sessionmaker[Session]) -> in
                 row.task = TASK_PREFIX + row.task.removeprefix(PRE_RENAME_TASK_PREFIX)
                 changed = True
             if row.kwargs and (kwargs := _moved_kwargs(str(row.kwargs))) is not None:
-                row.kwargs = kwargs
+                row.kwargs = kwargs  # ty: ignore[invalid-assignment]
                 changed = True
             moved += changed
         session.commit()
