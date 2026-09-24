@@ -2,7 +2,8 @@
 
 Compose topology pairing the PMM feature build (PMM Extensions frontend, PostgreSQL
 exposure, secret provisioning and the native `/extensions` proxy,
-[Percona-Lab/pmm-submodules#4500] = percona/pmm branch `PMM-15216`, PRs
+[Percona-Lab/pmm-submodules#4500] = percona/pmm branch
+`PMM-15569-extensions-rename`, [percona/pmm#5992], on top of the exposure from
 [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted PMM Extensions side-car:
 supervisord running the three APIs + Celery worker/beat + bundled Valkey,
 shipping only the `inventory`, `mysql_backups` and `atw` apps. The snippets
@@ -133,6 +134,7 @@ The pmm-server pin is subject to its own constraint — see
 [Percona-Lab/pmm-submodules#4500]: https://github.com/Percona-Lab/pmm-submodules/pull/4500
 [percona/pmm#5653]: https://github.com/percona/pmm/pull/5653
 [percona/pmm#5700]: https://github.com/percona/pmm/pull/5700
+[percona/pmm#5992]: https://github.com/percona/pmm/pull/5992
 
 ## Bring-up
 
@@ -261,12 +263,12 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/extensions/api
   working if PMM's runtime uid changes.
 - `PMM_ENABLE_EXTENSIONS=1` alone also makes pmm-server's entrypoint
   expose its embedded PostgreSQL on the compose network and provision the
-  low-privilege `extensions` role owning the `extensions` database (percona/pmm#5700).
+  low-privilege `pmm_extensions` role owning the `pmm_extensions` database (percona/pmm#5700).
   Nothing is published on the host. `PMM_ENABLE_NOMAD=1` + `PMM_PUBLIC_ADDRESS`
   start PMM's embedded Nomad, which PMM Extensions task execution dispatches through
   (Nomad silently stays down if the public address is unset).
 - All three PMM Extensions services **and** the Celery beat store share that single
-  `extensions` database — the exposure provisions exactly one db/role, and the three
+  `pmm_extensions` database — the exposure provisions exactly one db/role, and the three
   Alembic tracks use distinct version tables with non-colliding table names.
   The side-car's migration one-shots wait for `pmm-server:5432` and migrate
   on first boot.
@@ -439,6 +441,14 @@ curl -sk -H "Authorization: Bearer $TOKEN" https://127.0.0.1:8443/extensions/api
   the image, never an existing one. Then delete the leftover `pmm.conf` and
   `settings.yaml`: both are inert now, both hold secrets in cleartext, and both
   stay gitignored only to keep them out of a commit until you do. The retired
-  `EXTENSIONS_SECRET_KEY`, `EXTENSIONS_INTERNAL_TOKEN` and `EXTENSIONS_GRAFANA_TOKEN` slots in an
+  `SEP_SECRET_KEY`, `SEP_INTERNAL_TOKEN` and `SEP_GRAFANA_TOKEN` slots in an
   existing `.env` are inert too — nothing reads them — but delete them for the
   same reason.
+- **Upgrading a harness brought up before the PMM Extensions rename:** the
+  compose project is now `pmm-extensions-fb`, so the old `sep-pmm-fb` containers
+  are not replaced — they keep holding ports 8443 and 9000-9002 — and none of
+  their volumes are reused. Stop them
+  with `docker compose -p sep-pmm-fb down`, remove its volumes with
+  `docker volume rm $(docker volume ls -q --filter label=com.docker.compose.project=sep-pmm-fb)`,
+  and delete the `SEP_MYSQL_*` lines from `.env` — `./bootstrap.sh` appends the
+  `EXTENSIONS_MYSQL_*` slots that replace them.

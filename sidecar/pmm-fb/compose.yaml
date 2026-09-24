@@ -2,8 +2,10 @@
 #
 # pmm-server is the PMM feature build carrying the PMM Extensions frontend and the
 # PMM_ENABLE_EXTENSIONS PostgreSQL exposure (Percona-Lab/pmm-submodules#4500 =
-# percona/pmm branch PMM-15216, PRs #5653 + #5700): its entrypoint provisions
-# the network-reachable low-privilege `extensions` role and `extensions` database.
+# percona/pmm branch PMM-15569-extensions-rename, PR #5992, on top of the
+# exposure from PRs #5653 + #5700): its entrypoint provisions the
+# network-reachable low-privilege `pmm_extensions` role and `pmm_extensions`
+# database.
 #
 # extensions-sidecar is the app-restricted consolidated side-car, built and published
 # from main under a suffix-less tag — the build emits a single artifact. See
