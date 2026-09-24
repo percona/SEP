@@ -185,7 +185,7 @@ class TestActorStampGuard:
         """
         return await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
             key="SYNC_REFRESH_TIME",
             value=_GUARD_ORIGINAL_VALUE,
             updated_by="original-actor",
@@ -271,7 +271,7 @@ class TestActorStampGuard:
         """Roll back a correctly-stamped row alongside the unstamped one it shares a flush with."""
         sibling = await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
             key="ARTIFACT_DOWNLOAD_TTL",
             value=_GUARD_ORIGINAL_VALUE,
             updated_by="original-actor",
@@ -317,7 +317,7 @@ class TestActorStampGuard:
     ) -> None:
         """Reject a ``SettingsOverrideManager.update`` call that omits ``updated_by``."""
         patch = SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
             key=persisted_row.key,
             value=_GUARD_UPDATED_VALUE,
         )
@@ -331,7 +331,7 @@ class TestActorStampGuard:
     ) -> None:
         """Accept a ``SettingsOverrideManager.update`` call that also restamps ``updated_by``."""
         patch = SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
             key=persisted_row.key,
             value=_GUARD_UPDATED_VALUE,
             updated_by="new-actor",
@@ -351,7 +351,7 @@ class TestActorStampGuard:
         """
         row = await insert_override_row(
             session,
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
             key="SYNC_REFRESH_TIME",
             value=_GUARD_ORIGINAL_VALUE,
         )
@@ -363,7 +363,7 @@ class TestActorStampGuard:
     ) -> None:
         """Persist an ``updated_by`` reassigned on a not-yet-added instance."""
         row = SettingOverride(
-            setting_class=SettingClassEnum.SEP_SETTINGS,
+            setting_class=SettingClassEnum.EXTENSIONS_SETTINGS,
             key="SYNC_REFRESH_TIME",
             value=_GUARD_ORIGINAL_VALUE,
             updated_by="first-actor",
