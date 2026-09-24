@@ -15,7 +15,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { ApiError, parseFieldErrors, type FieldValidationError } from '@sep/api';
+import { ApiError, parseFieldErrors, type FieldValidationError } from '@pmm-extensions/api';
 import { actionErrorMessage } from '../ActionErrorAlert';
 import { buildFieldLabelMap } from '../SchemaFormRenderer';
 import type { FormSection } from '../SchemaFormRenderer/types';

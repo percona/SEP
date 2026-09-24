@@ -21,7 +21,7 @@ reads that file back through the executor and hands the decoded payload to a
 per-task recorder the owning plugin declared. The recorder path is resolved
 lazily via :func:`app.tasks.hook_resolver.resolve_hook`, mirroring
 :mod:`app.tasks.alert_hooks`, so this channel stays free of any static
-``app.sep`` import. The result is passed through as a plain ``dict`` — the tasks
+``app.extensions`` import. The result is passed through as a plain ``dict`` — the tasks
 service never learns a plugin's field names; the recorder validates the payload
 into its own model.
 """
@@ -50,8 +50,8 @@ logger = logging.getLogger(__name__)
 #: working directory — which the job spec pins to the task's output-files
 #: directory, so this resolves under :attr:`Task.output_files_path` on read. The
 #: leading dot keeps it out of the output-files listing, which skips dot-prefixed
-#: names: this is SEP's own protocol, not an artifact for a user to download.
-RUN_RESULT_FILENAME = ".sep-run-result.json"
+#: names: this is PMM Extensions' own protocol, not an artifact for a user to download.
+RUN_RESULT_FILENAME = ".pmm-extensions-run-result.json"
 
 #: Upper bound on a result file's size. A run result is a handful of scalar
 #: fields; anything larger is a payload bug and is discarded unread.
@@ -69,7 +69,7 @@ async def read_run_result(
 ) -> dict[str, Any] | None:
     """Read a terminal run's result file through the executor.
 
-    The read opts out of anonymization: this content is SEP's own protocol, not
+    The read opts out of anonymization: this content is PMM Extensions' own protocol, not
     output served to a user, and redaction would corrupt the very fields the
     recorder consumes. The read is best-effort: every shape of "there is no
     usable result" maps to ``None`` — no file, an empty one, an executor without

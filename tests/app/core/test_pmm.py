@@ -61,7 +61,7 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock()
 
             await create_pmm_annotation(
-                text="SEP backup - STARTED",
+                text="PMM Extensions: backup - STARTED",
                 node_name="node-1",
             )
 
@@ -77,7 +77,7 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock()
 
             await create_pmm_annotation(
-                text="SEP backup - STARTED",
+                text="PMM Extensions: backup - STARTED",
                 node_name="node-1",
             )
 
@@ -93,7 +93,7 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock()
 
             await create_pmm_annotation(
-                text="SEP backup - STARTED",
+                text="PMM Extensions: backup - STARTED",
                 node_name="node-1",
             )
 
@@ -107,9 +107,9 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock(return_value=mock_remote_api)
 
             await create_pmm_annotation(
-                text="SEP backup_data - STARTED",
+                text="PMM Extensions: backup_data - STARTED",
                 node_name="node-1",
-                tags=["sep", "backup_data", "started"],
+                tags=["pmm-extensions", "backup_data", "started"],
                 service_names=["mysql-svc"],
             )
 
@@ -117,8 +117,8 @@ class TestCreatePmmAnnotation:
         mock_remote_api.post.assert_awaited_once_with(
             "/v1/management/annotations",
             json={
-                "text": "SEP backup_data - STARTED",
-                "tags": ["sep", "backup_data", "started"],
+                "text": "PMM Extensions: backup_data - STARTED",
+                "tags": ["pmm-extensions", "backup_data", "started"],
                 "node_name": "node-1",
                 "service_names": ["mysql-svc"],
             },
@@ -134,14 +134,14 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock(return_value=mock_remote_api)
 
             await create_pmm_annotation(
-                text="SEP test - STARTED",
+                text="PMM Extensions: test - STARTED",
                 node_name="node-1",
             )
 
         mock_remote_api.post.assert_awaited_once_with(
             "/v1/management/annotations",
             json={
-                "text": "SEP test - STARTED",
+                "text": "PMM Extensions: test - STARTED",
                 "tags": [],
                 "node_name": "node-1",
                 "service_names": [],
@@ -160,7 +160,7 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock(return_value=mock_remote_api)
 
             await create_pmm_annotation(
-                text="SEP backup - STARTED",
+                text="PMM Extensions: backup - STARTED",
                 node_name="node-1",
             )
 
@@ -183,7 +183,7 @@ class TestCreatePmmAnnotation:
             mock_settings.get_remote_api = AsyncMock(return_value=mock_remote_api)
 
             await create_pmm_annotation(
-                text="SEP backup - STARTED",
+                text="PMM Extensions: backup - STARTED",
                 node_name="node-1",
             )
 
@@ -193,7 +193,7 @@ class TestAnnotateTaskEvent:
 
     @pytest.mark.asyncio
     async def test_annotation_text_format(self):
-        """Assert annotation text follows 'SEP {task} - {event}' format."""
+        """Assert annotation text follows "PMM Extensions: {task} - {event}" format."""
         with patch(
             "app.core.pmm.create_pmm_annotation", new_callable=AsyncMock
         ) as mock_create:
@@ -205,9 +205,9 @@ class TestAnnotateTaskEvent:
             )
 
         mock_create.assert_awaited_once_with(
-            text="SEP backup_data - STARTED",
+            text="PMM Extensions: backup_data - STARTED",
             node_name="node-1",
-            tags=["sep", "backup_data", "started"],
+            tags=["pmm-extensions", "backup_data", "started"],
             service_names=[],
         )
 

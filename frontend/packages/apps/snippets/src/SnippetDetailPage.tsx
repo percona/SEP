@@ -18,7 +18,7 @@
 import { useNavigate, useParams } from 'react-router';
 import { Alert, Box, CircularProgress, IconButton, Link as MuiLink, Tooltip } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
-import { SnippetExecutionAccordion } from '@sep/framework';
+import { SnippetExecutionAccordion } from '@pmm-extensions/framework';
 import { useSnippetDownload, useSnippetSchema } from './hooks';
 
 /**

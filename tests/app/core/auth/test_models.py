@@ -224,13 +224,13 @@ class TestBuildServicePrincipal:
         """Verify the constructor no longer defaults the principal's authority."""
         with pytest.raises(TypeError):
             CustomProviderUser.build_service_principal(
-                user_id=uuid4(), username="sep-service"
+                user_id=uuid4(), username="extensions-service"
             )
 
     def test_carries_the_requested_role(self):
         """Verify the role passed in reaches the built identity."""
         principal = CustomProviderUser.build_service_principal(
-            user_id=uuid4(), username="sep-service", role=UserRole.VIEWER
+            user_id=uuid4(), username="extensions-service", role=UserRole.VIEWER
         )
         assert principal.role is UserRole.VIEWER
         assert principal.is_admin is False

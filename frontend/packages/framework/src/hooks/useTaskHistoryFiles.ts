@@ -16,9 +16,9 @@
  */
 
 import { useQuery } from '@tanstack/react-query';
-import { apiClient, type SepComponents } from '@sep/api';
+import { apiClient, type ExtensionsComponents } from '@pmm-extensions/api';
 
-export type FileMetadata = SepComponents['schemas']['FileMetadata'];
+export type FileMetadata = ExtensionsComponents['schemas']['FileMetadata'];
 export type TaskHistoryFilesMap = Record<string, FileMetadata>;
 
 export interface UseTaskHistoryFilesOptions {

@@ -1,0 +1,85 @@
+# Copyright (C) 2026 Percona LLC
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+"""add bootstrap_run's data_path/log_path/port/bind_ip
+
+Revision ID: 2773844e362d
+Revises: 130e97b1c430
+Create Date: 2026-09-09 10:00:00.000000
+
+Hand-written, matching ``130e97b1c430``'s own note on why: autogenerate proposes
+a wrong diff against this table.
+
+Where mongod stores its data and log, the port it listens on and the
+interface(s) it binds to, per run. Each ``server_default`` is the value
+``TriggerRunRequest`` defaults the same field to (``/var/lib/mongo``,
+``/var/log/mongodb/mongod.log``, ``27017``, ``127.0.0.1``).
+"""
+
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+from app.extensions.apps.shared.om.config import om_schema
+from app.extensions.config import extensions_settings as sep_settings
+
+
+# revision identifiers, used by Alembic.
+revision: str = "2773844e362d"
+down_revision: Union[str, None] = "130e97b1c430"
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    schema = om_schema(sep_settings.DATABASE)
+    op.add_column(
+        "bootstrap_run",
+        sa.Column(
+            "data_path", sa.Text(), nullable=False, server_default="/var/lib/mongo"
+        ),
+        schema=schema,
+    )
+    op.add_column(
+        "bootstrap_run",
+        sa.Column(
+            "log_path",
+            sa.Text(),
+            nullable=False,
+            server_default="/var/log/mongodb/mongod.log",
+        ),
+        schema=schema,
+    )
+    op.add_column(
+        "bootstrap_run",
+        sa.Column(
+            "port", sa.Integer(), nullable=False, server_default="27017"
+        ),
+        schema=schema,
+    )
+    op.add_column(
+        "bootstrap_run",
+        sa.Column("bind_ip", sa.Text(), nullable=False, server_default="127.0.0.1"),
+        schema=schema,
+    )
+
+
+def downgrade() -> None:
+    schema = om_schema(sep_settings.DATABASE)
+    op.drop_column("bootstrap_run", "bind_ip", schema=schema)
+    op.drop_column("bootstrap_run", "port", schema=schema)
+    op.drop_column("bootstrap_run", "log_path", schema=schema)
+    op.drop_column("bootstrap_run", "data_path", schema=schema)

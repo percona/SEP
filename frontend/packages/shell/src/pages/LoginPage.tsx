@@ -27,7 +27,7 @@ import CardContent from '@mui/material/CardContent';
 import CircularProgress from '@mui/material/CircularProgress';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
-import { ApiError } from '@sep/api';
+import { ApiError } from '@pmm-extensions/api';
 import { useAuth } from '../contexts/auth';
 
 interface LoginFormValues {
@@ -106,7 +106,7 @@ export default function LoginPage() {
                 PERCONA
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Services Enablement Platform
+                PMM Extensions
               </Typography>
             </Box>
 

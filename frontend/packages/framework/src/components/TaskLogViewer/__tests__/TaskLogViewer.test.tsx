@@ -51,7 +51,7 @@ vi.mock('@melloware/react-logviewer', async () => {
 
 // Manual mock keeps axios out of the resolution graph.
 let _tokenProvider: () => string | null = () => null;
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   setTokenProvider: (p: () => string | null) => {
     _tokenProvider = p;
   },
@@ -392,7 +392,7 @@ describe('TaskLogViewer', () => {
   });
 
   it('reloads an ended live log uncapped when the line cap is All', async () => {
-    globalThis.localStorage.setItem('sep.taskLogViewer.tail', 'all');
+    globalThis.localStorage.setItem('extensions.taskLogViewer.tail', 'all');
     const { rerender } = render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
@@ -417,7 +417,7 @@ describe('TaskLogViewer', () => {
   });
 
   it('reloads an ended live log only once, whatever its reload does', async () => {
-    globalThis.localStorage.setItem('sep.taskLogViewer.tail', 'all');
+    globalThis.localStorage.setItem('extensions.taskLogViewer.tail', 'all');
     const { rerender } = render(
       <QueryWrapper>
         <TaskLogViewer taskHistoryId="7" taskStatus="RUNNING" />
@@ -490,7 +490,7 @@ describe('TaskLogViewer', () => {
   });
 
   it('restores the tail choice from localStorage for finished tasks', async () => {
-    globalThis.localStorage.setItem('sep.taskLogViewer.tail', '5000');
+    globalThis.localStorage.setItem('extensions.taskLogViewer.tail', '5000');
 
     render(
       <QueryWrapper>
@@ -534,7 +534,7 @@ describe('TaskLogViewer', () => {
     await flushPromises();
 
     expect(logFetchUrls().at(-1)).toBe('/stream-logs/8?tail=100');
-    expect(globalThis.localStorage.getItem('sep.taskLogViewer.tail')).toBe('100');
+    expect(globalThis.localStorage.getItem('extensions.taskLogViewer.tail')).toBe('100');
   });
 
   it('clears displayed logs when the line cap changes for finished tasks', async () => {
@@ -577,13 +577,13 @@ describe('TaskLogViewer', () => {
 
     await waitFor(() => expect(queryTailSelect()).toBeNull());
     // Hiding the control leaves the stored choice alone for the next log.
-    expect(globalThis.localStorage.getItem('sep.taskLogViewer.tail')).toBeNull();
+    expect(globalThis.localStorage.getItem('extensions.taskLogViewer.tail')).toBeNull();
     // The request still carried the stored cap — size is unknown until it arrives.
     expect(logFetchUrls()[0]).toBe('/stream-logs/20?tail=1000');
   });
 
   it('hides the line cap when a short finished log was fetched with All lines', async () => {
-    globalThis.localStorage.setItem('sep.taskLogViewer.tail', 'all');
+    globalThis.localStorage.setItem('extensions.taskLogViewer.tail', 'all');
 
     render(
       <QueryWrapper>
@@ -602,7 +602,7 @@ describe('TaskLogViewer', () => {
   });
 
   it('keeps the line cap when a finished pane sits exactly at the requested cap', async () => {
-    globalThis.localStorage.setItem('sep.taskLogViewer.tail', '100');
+    globalThis.localStorage.setItem('extensions.taskLogViewer.tail', '100');
 
     render(
       <QueryWrapper>
@@ -654,7 +654,7 @@ describe('TaskLogViewer', () => {
     const handle = getHandle('25');
     act(() => {
       handle.pushMessage({ msg: lines(2), step: 'setup', type: 'stdout', offset: 1 });
-      handle.pushNamed('sep-error', { detail: 'gateway blew up' });
+      handle.pushNamed('extensions-error', { detail: 'gateway blew up' });
     });
     await waitFor(() => expect(screen.getByText('gateway blew up')).toBeInTheDocument());
 
@@ -952,7 +952,7 @@ describe('TaskLogViewer', () => {
 
     const handle = getHandle('1');
     act(() => {
-      handle.pushNamed('sep-error', {
+      handle.pushNamed('extensions-error', {
         code: 410,
         detail: { message: 'gone', job_id: 'J-1', executor_name: 'nomad-a' },
       });

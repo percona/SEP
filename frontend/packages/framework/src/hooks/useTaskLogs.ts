@@ -16,7 +16,7 @@
  */
 
 import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event-source';
-import { emitUnauthorized, getToken, refreshAccessToken } from '@sep/api';
+import { emitUnauthorized, getToken, refreshAccessToken } from '@pmm-extensions/api';
 import { useEffect, useRef, useState } from 'react';
 
 export type LogType = 'stdout' | 'stderr';
@@ -216,7 +216,7 @@ export function useTaskLogs(
           return;
         }
 
-        if (ev.event === 'sep-error') {
+        if (ev.event === 'extensions-error') {
           let payload: StreamError;
           try {
             const parsed = JSON.parse(ev.data) as { code?: number; detail?: unknown };
@@ -290,7 +290,7 @@ export function useTaskLogs(
         if (disposed || terminatedCleanly) {
           return;
         }
-        // Server closed the connection without a finish/sep-error frame.
+        // Server closed the connection without a finish/extensions-error frame.
         setError({ detail: { message: 'Task log stream connection closed.' } });
         streamStatusRef.current = 'error';
         setStreamStatus('error');

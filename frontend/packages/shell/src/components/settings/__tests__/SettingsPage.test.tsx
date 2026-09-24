@@ -21,7 +21,12 @@ import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { server } from '../../../../tests/msw-server';
-import { appsListResponse, makeWrapper, sepListResponse, tasksListResponse } from './fixtures';
+import {
+  appsListResponse,
+  makeWrapper,
+  extensionsListResponse,
+  tasksListResponse,
+} from './fixtures';
 
 const authState = vi.hoisted(() => ({ isAdmin: true }));
 vi.mock('../../../contexts/auth', () => ({
@@ -30,18 +35,22 @@ vi.mock('../../../contexts/auth', () => ({
 
 import SettingsPage from '../../../pages/SettingsPage';
 
-const SEP_URL = 'http://localhost/api/sep/admin/settings/';
-const EXPORT_URL = 'http://localhost/api/sep/admin/settings/export';
+const EXTENSIONS_URL = 'http://localhost/api/extensions/admin/settings/';
+const EXPORT_URL = 'http://localhost/api/extensions/admin/settings/export';
 
 const originalCreateObjectURL = URL.createObjectURL;
 const originalRevokeObjectURL = URL.revokeObjectURL;
 
 /**
- * SEP aggregates its local classes, the proxied TasksSettings, and app-owned
+ * PMM Extensions aggregates its local classes, the proxied TasksSettings, and app-owned
  * groups (both enabled and disabled) into one list.
  */
 const combinedListResponse = {
-  groups: [...sepListResponse.groups, ...tasksListResponse.groups, ...appsListResponse.groups],
+  groups: [
+    ...extensionsListResponse.groups,
+    ...tasksListResponse.groups,
+    ...appsListResponse.groups,
+  ],
 };
 
 function renderPage() {
@@ -51,12 +60,12 @@ function renderPage() {
 beforeEach(() => {
   authState.isAdmin = true;
   server.use(
-    http.get(SEP_URL, () => HttpResponse.json(combinedListResponse)),
+    http.get(EXTENSIONS_URL, () => HttpResponse.json(combinedListResponse)),
     http.get(EXPORT_URL, () =>
-      HttpResponse.text('SEPSettings: {}\n', {
+      HttpResponse.text('ExtensionsSettings: {}\n', {
         headers: {
           'Content-Type': 'application/x-yaml',
-          'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
+          'Content-Disposition': 'attachment; filename="pmm-extensions-config-2026-06-14.yaml"',
         },
       }),
     ),
@@ -88,10 +97,10 @@ describe('SettingsPage', () => {
     server.use(
       http.get(EXPORT_URL, () => {
         exportCalls += 1;
-        return HttpResponse.text('SEPSettings: {}\n', {
+        return HttpResponse.text('ExtensionsSettings: {}\n', {
           headers: {
             'Content-Type': 'application/x-yaml',
-            'Content-Disposition': 'attachment; filename="sep-config-2026-06-14.yaml"',
+            'Content-Disposition': 'attachment; filename="pmm-extensions-config-2026-06-14.yaml"',
           },
         });
       }),
@@ -138,7 +147,7 @@ describe('SettingsPage', () => {
   it('renders one group per class with their settings', async () => {
     renderPage();
     await waitFor(() =>
-      expect(screen.getByTestId('settings-group-SEPSettings')).toBeInTheDocument(),
+      expect(screen.getByTestId('settings-group-ExtensionsSettings')).toBeInTheDocument(),
     );
     expect(screen.getByTestId('settings-group-SnippetsSettings')).toBeInTheDocument();
     expect(screen.getByTestId('settings-group-TasksSettings')).toBeInTheDocument();
@@ -206,15 +215,19 @@ describe('SettingsPage', () => {
 
     const region = screen.getByTestId('app-settings-region');
     // Core groups are not tagged and not nested under the App settings region.
-    expect(screen.getByTestId('settings-group-SEPSettings')).toBeInTheDocument();
-    expect(within(region).queryByTestId('settings-group-SEPSettings')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings-group-ExtensionsSettings')).toBeInTheDocument();
+    expect(
+      within(region).queryByTestId('settings-group-ExtensionsSettings'),
+    ).not.toBeInTheDocument();
     expect(within(region).queryByTestId('settings-group-TasksSettings')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('settings-group-app-label-SEPSettings')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('settings-group-app-label-ExtensionsSettings'),
+    ).not.toBeInTheDocument();
   });
 
   it('hides app-owned groups whose owning app is disabled', async () => {
     renderPage();
-    await screen.findByTestId('settings-group-SEPSettings');
+    await screen.findByTestId('settings-group-ExtensionsSettings');
     // The disabled app's group and its rows never render.
     expect(screen.queryByTestId('settings-group-InventorySettings')).not.toBeInTheDocument();
     expect(screen.queryByTestId('setting-row-INVENTORY_SCAN_INTERVAL')).not.toBeInTheDocument();
@@ -222,7 +235,7 @@ describe('SettingsPage', () => {
 
   it('keeps disabled apps out of the Class filter dropdown', async () => {
     renderPage();
-    await screen.findByTestId('settings-group-SEPSettings');
+    await screen.findByTestId('settings-group-ExtensionsSettings');
 
     await userEvent.click(screen.getByLabelText('Filter by class'));
     const listbox = await screen.findByRole('listbox');
@@ -235,14 +248,14 @@ describe('SettingsPage', () => {
 
   it('omits the App settings region when no enabled app-owned groups remain', async () => {
     server.use(
-      http.get(SEP_URL, () =>
+      http.get(EXTENSIONS_URL, () =>
         HttpResponse.json({
-          groups: [...sepListResponse.groups, appsListResponse.groups[1]],
+          groups: [...extensionsListResponse.groups, appsListResponse.groups[1]],
         }),
       ),
     );
     renderPage();
-    await screen.findByTestId('settings-group-SEPSettings');
+    await screen.findByTestId('settings-group-ExtensionsSettings');
     expect(screen.queryByTestId('app-settings-region')).not.toBeInTheDocument();
     expect(screen.queryByText('App settings')).not.toBeInTheDocument();
   });

@@ -45,24 +45,36 @@ export interface LegacyRouteAlias {
 }
 
 const InventoryApp = lazy(() =>
-  import('@sep/inventory').then((m) => ({ default: m.InventoryApp })),
+  import('@pmm-extensions/inventory').then((m) => ({ default: m.InventoryApp })),
 );
-const TasksApp = lazy(() => import('@sep/tasks').then((m) => ({ default: m.TasksApp })));
-const SnippetsApp = lazy(() => import('@sep/snippets').then((m) => ({ default: m.SnippetsApp })));
-const AtwAppLazy = lazy(() => import('@sep/atw').then((m) => ({ default: m.AtwApp })));
-const DipperApp = lazy(() => import('@sep/dipper').then((m) => ({ default: m.DipperApp })));
-const AlertsApp = lazy(() => import('@sep/alerts').then((m) => ({ default: m.AlertsApp })));
+const TasksApp = lazy(() => import('@pmm-extensions/tasks').then((m) => ({ default: m.TasksApp })));
+const SnippetsApp = lazy(() =>
+  import('@pmm-extensions/snippets').then((m) => ({ default: m.SnippetsApp })),
+);
+const AtwAppLazy = lazy(() => import('@pmm-extensions/atw').then((m) => ({ default: m.AtwApp })));
+const DipperApp = lazy(() =>
+  import('@pmm-extensions/dipper').then((m) => ({ default: m.DipperApp })),
+);
+const AlertsApp = lazy(() =>
+  import('@pmm-extensions/alerts').then((m) => ({ default: m.AlertsApp })),
+);
 const AlertTroubleshootingApp = lazy(() =>
-  import('@sep/alert-troubleshooting').then((m) => ({
+  import('@pmm-extensions/alert-troubleshooting').then((m) => ({
     default: m.AlertTroubleshootingApp,
   })),
 );
-const AltersApp = lazy(() => import('@sep/alters').then((m) => ({ default: m.AltersApp })));
-const BackupMongoApp = lazy(() =>
-  import('@sep/backup-mongo').then((m) => ({ default: m.BackupMongoApp })),
+const AltersApp = lazy(() =>
+  import('@pmm-extensions/alters').then((m) => ({ default: m.AltersApp })),
 );
-const ReportApp = lazy(() => import('@sep/report').then((m) => ({ default: m.ReportApp })));
-const TopologyApp = lazy(() => import('@sep/topology').then((m) => ({ default: m.TopologyApp })));
+const BackupMongoApp = lazy(() =>
+  import('@pmm-extensions/backup-mongo').then((m) => ({ default: m.BackupMongoApp })),
+);
+const ReportApp = lazy(() =>
+  import('@pmm-extensions/report').then((m) => ({ default: m.ReportApp })),
+);
+const TopologyApp = lazy(() =>
+  import('@pmm-extensions/topology').then((m) => ({ default: m.TopologyApp })),
+);
 
 // ATW's delivery setup gate offers admins a link to the settings page that
 // fixes an unconfigured deployment; everyone else gets the explanation alone.

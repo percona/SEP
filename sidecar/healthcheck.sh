@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Aggregate container health for the consolidated SEP side-car.
+# Aggregate container health for the consolidated PMM Extensions side-car.
 # Exit 0 only if every non-one-shot supervisord program is RUNNING, all four
 # schema steps completed, all three API /health endpoints return 200, and the
 # bundled Valkey broker answers PING.
@@ -9,7 +9,7 @@
 # probe is what keeps a healthy container meaning the APIs answer.
 set -o errexit -o nounset -o pipefail
 
-conf=/home/sep/app/supervisord.conf
+conf=/home/extensions/app/supervisord.conf
 
 # Only the migration one-shots may sit in EXITED; every other program must be
 # RUNNING. A failed upgrade also lands in EXITED and is indistinguishable here,
@@ -30,7 +30,7 @@ for prog in "${programs[@]}"; do
     fi
 done
 
-for svc in sep inventory tasks beat; do
+for svc in extensions inventory tasks beat; do
     if [[ ! -f /tmp/migrate-$svc.ok ]]; then
         echo "unhealthy: $svc schema step did not complete successfully" >&2
         exit 1

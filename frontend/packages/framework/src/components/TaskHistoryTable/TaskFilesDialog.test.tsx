@@ -22,13 +22,13 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { PropsWithChildren } from 'react';
 import { TaskFilesDialog } from './TaskFilesDialog';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: {
     get: vi.fn(),
   },
 }));
 
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 
 const mockedApiClient = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 

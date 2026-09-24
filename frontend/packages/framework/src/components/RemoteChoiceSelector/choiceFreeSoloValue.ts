@@ -29,7 +29,7 @@
  *   - clearing the field commits `null`.
  */
 
-import type { ChoiceOption } from '@sep/api';
+import type { ChoiceOption } from '@pmm-extensions/api';
 
 /** The value MUI Autocomplete renders: an option object, a free string, or empty. */
 export type ChoiceFreeSoloDisplayValue = ChoiceOption | string | null;
