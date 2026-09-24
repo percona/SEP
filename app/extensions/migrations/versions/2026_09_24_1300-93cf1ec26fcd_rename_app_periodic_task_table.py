@@ -85,13 +85,16 @@ def _rename_prefix(table: str, column: str, source: str, target: str) -> None:
     :param source: The prefix the values carry.
     :param target: The prefix to store instead.
     """
+    values = sa.column(column, sa.String)
     op.execute(
-        sa.text(
-            f"UPDATE {table} SET {column} = "
-            f":target || substr({column}, :offset) "
-            f"WHERE substr({column}, 1, :length) = :source"
-        ).bindparams(
-            target=target, source=source, offset=len(source) + 1, length=len(source)
+        sa.update(sa.table(table, values))
+        .where(sa.func.substr(values, 1, len(source)) == source)
+        .values(
+            {
+                column: sa.literal(target, sa.String).concat(
+                    sa.func.substr(values, len(source) + 1)
+                )
+            }
         )
     )
 
