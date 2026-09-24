@@ -93,7 +93,7 @@ Replacement = str | Callable[[re.Match[str]], str]
 
 @dataclass(frozen=True)
 class Rule:
-    """One pattern attributed to one map row.
+    """Carry one pattern attributed to one map row.
 
     :param row: The key of the map row the names come from.
     :param pattern: The compiled pattern to replace.
@@ -109,7 +109,7 @@ class Rule:
 
 @dataclass
 class Report:
-    """The outcome of a run, per map row and per file.
+    """Record the outcome of a run, per map row and per file.
 
     :param replacements: Replacements per map row.
     :param files_per_row: Files each map row changed.
@@ -131,7 +131,10 @@ class Report:
     absent_rows: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, object]:
-        """Return the report as JSON-serialisable data."""
+        """Return the report as JSON-serialisable data.
+
+        :return: The per-row counts, the move and edit totals, and the details.
+        """
         return {
             "rows": {
                 row: {"replacements": count, "files": self.files_per_row[row]}
@@ -147,7 +150,7 @@ class Report:
 
 
 class RenameMap:
-    """The rename map's rows, parsed into ``old``/``new`` item lists.
+    """Hold the rename map's rows, parsed into ``old``/``new`` item lists.
 
     :param rows: The ``rows`` array of the map file.
     """
@@ -190,12 +193,20 @@ class RenameMap:
 
 
 def last_word(item: str) -> str:
-    """Return the name an annotated item carries, e.g. ``sep-error`` of ``SSE event sep-error``."""
+    """Return the name an annotated item carries, e.g. ``sep-error`` of ``SSE event sep-error``.
+
+    :param item: One map item, possibly prefixed with what the name is.
+    :return: The item's last whitespace-separated word.
+    """
     return item.split()[-1]
 
 
 def bounded(name: str) -> re.Pattern[str]:
-    """Match ``name`` where it is not part of a longer identifier, path or kebab word."""
+    """Match ``name`` where it is not part of a longer identifier, path or kebab word.
+
+    :param name: The literal name to match.
+    :return: The compiled, boundary-guarded pattern.
+    """
     return re.compile(rf"(?<![\w-]){re.escape(name)}(?![\w-])")
 
 
@@ -232,7 +243,11 @@ def prefix_rule(rename_map: RenameMap, key: str, index: int) -> Rule:
 
 
 def _stems(rename_map: RenameMap) -> tuple[str, str]:
-    """Return the package stem pair, ``sep``/``extensions``, from the ``pkg`` row."""
+    """Return the package stem pair, ``sep``/``extensions``, from the ``pkg`` row.
+
+    :param rename_map: The parsed rename map.
+    :return: The old and new stems.
+    """
     old, new = rename_map.pair("pkg", 0)
     return old.rsplit("/", 1)[-1], new.rsplit("/", 1)[-1]
 
@@ -549,7 +564,12 @@ _TRACK_LIST = re.compile(
 
 
 def _in_track_list(old: str, new: str) -> Callable[[re.Match[str]], str]:
-    """Rename the bare track name inside a matched track-list line."""
+    """Rename the bare track name inside a matched track-list line.
+
+    :param old: The old track name.
+    :param new: The new track name.
+    :return: A replacement function for :meth:`re.Pattern.sub`.
+    """
     word = re.compile(rf"(?<![\w./@-]){old}(?![\w./-])")
     return lambda match: word.sub(new, match.group())
 
@@ -561,7 +581,11 @@ _SERVICE_LIST = re.compile(
 
 
 def _short(rename_map: RenameMap) -> list[Rule]:
-    """Name the core service beside Inventory and Tasks with the short product name."""
+    """Name the core service beside Inventory and Tasks with the short product name.
+
+    :param rename_map: The parsed rename map.
+    :return: The ``short`` row's rules.
+    """
     abbreviation = rename_map.items("display", "old")[0]
     new = rename_map.items("short", "new")[0]
     word = re.compile(rf"(?<![\w./-]){abbreviation}(?![\w/-])")
@@ -595,10 +619,13 @@ _STRING_METHODS = (
 
 
 def _pkg(rename_map: RenameMap) -> list[Rule]:
-    """Package paths and module names, then every identifier built on the stem.
+    """Rename package paths and module names, then every identifier built on the stem.
 
     The stem pair is the last path segment of the row's first item. Identifier
     components follow the case of the component they replace.
+
+    :param rename_map: The parsed rename map.
+    :return: The ``pkg`` row's rules.
     """
     old_path, new_path = rename_map.pair("pkg", 0)
     old_mount, new_mount = rename_map.pair("pkg", 1)
@@ -669,7 +696,11 @@ def _pkg(rename_map: RenameMap) -> list[Rule]:
 
 
 def _display(rename_map: RenameMap) -> list[Rule]:
-    """Prose: the long product names, then the abbreviation with its grammar."""
+    """Rename prose: the long product names, then the abbreviation with its grammar.
+
+    :param rename_map: The parsed rename map.
+    :return: The ``display`` row's rules.
+    """
     olds = rename_map.items("display", "old")
     new = rename_map.items("display", "new")[0]
     abbreviation = olds[0]
@@ -816,7 +847,11 @@ def revision_slug_protection(files: Iterable[str]) -> dict[str, re.Pattern[str]]
 
 
 def active_protections(rename_map: RenameMap) -> dict[str, re.Pattern[str]]:
-    """Return :data:`PROTECTED` without the guards of the guarded rows the map carries."""
+    """Return :data:`PROTECTED` without the guards of the guarded rows the map carries.
+
+    :param rename_map: The parsed rename map.
+    :return: The masking patterns in force, by category.
+    """
     lifted = {category for key, category in GUARDED_ROWS.items() if key in rename_map}
     return {
         category: pattern
@@ -867,7 +902,12 @@ def rewrite(
 
 
 def _counting(rule: Rule, counts: Counter[str]) -> Callable[[re.Match[str]], str]:
-    """Wrap a rule's replacement so only a match it actually changes is counted."""
+    """Wrap a rule's replacement so only a match it actually changes is counted.
+
+    :param rule: The rule whose replacement is wrapped.
+    :param counts: The per-row counter to increment.
+    :return: A replacement function for :meth:`re.Pattern.sub`.
+    """
 
     def _replace(match: re.Match[str]) -> str:
         if isinstance(rule.replacement, str):
@@ -934,14 +974,25 @@ def rewrite_history_imports(
 def rename_path(
     path: str, rules: list[Rule], protections: dict[str, re.Pattern[str]]
 ) -> str:
-    """Return the renamed form of a repository path, by the non-prose rules."""
+    """Return the renamed form of a repository path, by the non-prose rules.
+
+    :param path: The repository-relative path.
+    :param rules: The rules to apply.
+    :param protections: The masking patterns in force.
+    :return: The path with every old name renamed.
+    """
     return rewrite(
         path, [rule for rule in rules if not rule.prose], protections, prose=False
     )[0]
 
 
 def git(*args: str, git_dir: str | None = None) -> str:
-    """Run git in the repository root and return its stdout."""
+    """Run git in the repository root and return its stdout.
+
+    :param args: The git arguments.
+    :param git_dir: A git directory to run against instead of the repository's.
+    :return: The command's standard output.
+    """
     prefix = (
         ["git", f"--git-dir={git_dir}", f"--work-tree={REPO_ROOT}"]
         if git_dir
@@ -953,7 +1004,10 @@ def git(*args: str, git_dir: str | None = None) -> str:
 
 
 def tracked_files() -> list[str]:
-    """Return every tracked path, submodules and symlinks included."""
+    """Return every tracked path, submodules and symlinks included.
+
+    :return: The repository-relative paths.
+    """
     return [path for path in git("ls-files", "-z").split("\0") if path]
 
 
@@ -964,6 +1018,11 @@ def plan_moves(
 
     An excluded file keeps its own name, since history stays byte-identical, but
     it still follows its directory.
+
+    :param files: The tracked paths.
+    :param rules: The rules to apply.
+    :param protections: The masking patterns in force.
+    :return: Old path -> new path for every path that changes.
     """
     moves = {}
     for path in files:
@@ -979,7 +1038,11 @@ def plan_moves(
 
 
 def plan_ignored_moves(moves: dict[str, str]) -> dict[str, str]:
-    """Return old -> new for ignored companions inside every moved directory."""
+    """Return old -> new for ignored companions inside every moved directory.
+
+    :param moves: Old path -> new path for the tracked files.
+    :return: Old path -> new path for each ignored companion.
+    """
     directories = {
         str(Path(old).parent): str(Path(new).parent) for old, new in moves.items()
     }
@@ -993,7 +1056,10 @@ def plan_ignored_moves(moves: dict[str, str]) -> dict[str, str]:
 
 
 def apply_moves(moves: dict[str, str]) -> None:
-    """Move tracked files with ``git mv``, batched by destination directory."""
+    """Move tracked files with ``git mv``, batched by destination directory.
+
+    :param moves: Old path -> new path for the tracked files.
+    """
     by_destination: dict[str, list[str]] = {}
     for old, new in moves.items():
         if Path(new).name != Path(old).name:
@@ -1008,7 +1074,11 @@ def apply_moves(moves: dict[str, str]) -> None:
 
 
 def apply_ignored_moves(companions: dict[str, str], side_repo: str | None) -> None:
-    """Move ignored companions, recording the move in the side repository if given."""
+    """Move ignored companions, recording the move in the side repository if given.
+
+    :param companions: Old path -> new path for each ignored companion.
+    :param side_repo: The side repository's git directory, or ``None``.
+    """
     for old, new in companions.items():
         target = REPO_ROOT / new
         if target.exists() or target.is_symlink():
@@ -1027,6 +1097,8 @@ def remove_stale_caches(moves: dict[str, str]) -> None:
     namespace package, so its caches go too. Directories are visited deepest
     first, up every moved file's parent chain, so a tree that held only
     subdirectories is removed as well.
+
+    :param moves: Old path -> new path for the tracked files.
     """
     directories: set[Path] = set()
     for old in moves:
@@ -1043,7 +1115,11 @@ def remove_stale_caches(moves: dict[str, str]) -> None:
 
 
 def read_text(path: Path) -> str | None:
-    """Return a file's text, or ``None`` for a binary, unreadable or symlinked file."""
+    """Return a file's text, or ``None`` for a binary, unreadable or symlinked file.
+
+    :param path: The file to read.
+    :return: The decoded text, or ``None``.
+    """
     if path.is_symlink() or not path.is_file():
         return None
     data = path.read_bytes()
@@ -1150,7 +1226,11 @@ def run(rename_map: RenameMap, *, dry_run: bool, side_repo: str | None) -> Repor
 
 
 def print_summary(report: Report, *, dry_run: bool) -> None:
-    """Print the per-row table and totals."""
+    """Print the per-row table and totals.
+
+    :param report: The run's report.
+    :param dry_run: Whether the run only planned its edits.
+    """
     heading = "Planned" if dry_run else "Applied"
     print(f"{heading} replacements per map row:")
     for row, count in sorted(report.replacements.items(), key=lambda item: -item[1]):
@@ -1168,8 +1248,12 @@ def print_summary(report: Report, *, dry_run: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Parse arguments and run."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    """Parse arguments and run.
+
+    :param argv: The arguments, or ``None`` for :data:`sys.argv`.
+    :return: The exit status.
+    """
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--map", type=Path, default=DEFAULT_MAP, help="rename map JSON")
     parser.add_argument(
         "--dry-run", action="store_true", help="plan only; print per-row counts"
