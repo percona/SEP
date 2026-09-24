@@ -4549,6 +4549,62 @@ export interface components {
       type: string;
     };
     /**
+     * ExtensionsHistoryPayload
+     * @description Represent the PMM Extensions task-history page envelope with passthrough extras.
+     *
+     *     Declare only ``items``: ``total``, ``offset``, ``limit``, and any other
+     *     upstream keys round-trip through ``extra="allow"`` without int coercion.
+     *     ``items`` accepts a list of typed rows or non-mapping fallbacks, or any
+     *     non-list upstream value so a bad page shape does not fail validation.
+     *
+     *     :param items: The page's rows when upstream sent a list; otherwise the raw
+     *         upstream value (including absence, via ``exclude_unset`` on dump).
+     */
+    ExtensionsHistoryPayload: {
+      /** Items */
+      items?: (components['schemas']['ExtensionsHistoryPayloadRow'] | unknown)[] | unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    /**
+     * ExtensionsHistoryPayloadRow
+     * @description Carry one history-page row's fields the actor rewrite may resolve.
+     *
+     *     A non-mapping ``task`` stays on the ``Any`` arm so the row still validates
+     *     and its own ``executed_by`` can resolve. Unknown upstream keys survive via
+     *     ``extra="allow"``.
+     *
+     *     :param executed_by: Actor that ran the task. Typed as ``Any`` so an
+     *         unexpected shape validates and is left alone by the rewrite.
+     *     :param task: Nested task carrying actor fields when it is a mapping;
+     *         otherwise the raw upstream value.
+     */
+    ExtensionsHistoryPayloadRow: {
+      /** Executed By */
+      executed_by?: unknown;
+      /** Task */
+      task?: components['schemas']['ExtensionsHistoryPayloadTask'] | unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    /**
+     * ExtensionsHistoryPayloadTask
+     * @description Carry the nested-task actor fields the history rewrite may resolve.
+     *
+     *     :param created_by: Actor for the nested task's creator. Typed as ``Any`` so
+     *         an unexpected upstream shape validates and round-trips unchanged.
+     *     :param last_updated_by: Actor for the nested task's last updater, on the
+     *         same permissive terms as ``created_by``.
+     */
+    ExtensionsHistoryPayloadTask: {
+      /** Created By */
+      created_by?: unknown;
+      /** Last Updated By */
+      last_updated_by?: unknown;
+    } & {
+      [key: string]: unknown;
+    };
+    /**
      * ExtensionsTaskHistoryResponse
      * @description Represent a task-history row as PMM Extensions serves it, with actors resolved.
      *
@@ -4942,62 +4998,6 @@ export interface components {
       sync_failing_since?: string | null;
       /** Updated At */
       updated_at?: string | null;
-    };
-    /**
-     * ExtensionsHistoryPayload
-     * @description Represent the PMM Extensions task-history page envelope with passthrough extras.
-     *
-     *     Declare only ``items``: ``total``, ``offset``, ``limit``, and any other
-     *     upstream keys round-trip through ``extra="allow"`` without int coercion.
-     *     ``items`` accepts a list of typed rows or non-mapping fallbacks, or any
-     *     non-list upstream value so a bad page shape does not fail validation.
-     *
-     *     :param items: The page's rows when upstream sent a list; otherwise the raw
-     *         upstream value (including absence, via ``exclude_unset`` on dump).
-     */
-    ExtensionsHistoryPayload: {
-      /** Items */
-      items?: (components['schemas']['ExtensionsHistoryPayloadRow'] | unknown)[] | unknown;
-    } & {
-      [key: string]: unknown;
-    };
-    /**
-     * ExtensionsHistoryPayloadRow
-     * @description Carry one history-page row's fields the actor rewrite may resolve.
-     *
-     *     A non-mapping ``task`` stays on the ``Any`` arm so the row still validates
-     *     and its own ``executed_by`` can resolve. Unknown upstream keys survive via
-     *     ``extra="allow"``.
-     *
-     *     :param executed_by: Actor that ran the task. Typed as ``Any`` so an
-     *         unexpected shape validates and is left alone by the rewrite.
-     *     :param task: Nested task carrying actor fields when it is a mapping;
-     *         otherwise the raw upstream value.
-     */
-    ExtensionsHistoryPayloadRow: {
-      /** Executed By */
-      executed_by?: unknown;
-      /** Task */
-      task?: components['schemas']['ExtensionsHistoryPayloadTask'] | unknown;
-    } & {
-      [key: string]: unknown;
-    };
-    /**
-     * ExtensionsHistoryPayloadTask
-     * @description Carry the nested-task actor fields the history rewrite may resolve.
-     *
-     *     :param created_by: Actor for the nested task's creator. Typed as ``Any`` so
-     *         an unexpected upstream shape validates and round-trips unchanged.
-     *     :param last_updated_by: Actor for the nested task's last updater, on the
-     *         same permissive terms as ``created_by``.
-     */
-    ExtensionsHistoryPayloadTask: {
-      /** Created By */
-      created_by?: unknown;
-      /** Last Updated By */
-      last_updated_by?: unknown;
-    } & {
-      [key: string]: unknown;
     };
     /**
      * ServiceEnum

@@ -1,19 +1,6 @@
 {
   "components": {
     "schemas": {
-      "HTTPValidationError": {
-        "properties": {
-          "detail": {
-            "items": {
-              "$ref": "#/components/schemas/ValidationError"
-            },
-            "title": "Detail",
-            "type": "array"
-          }
-        },
-        "title": "HTTPValidationError",
-        "type": "object"
-      },
       "ExtensionsHistoryPayload": {
         "additionalProperties": true,
         "description": "Represent the PMM Extensions task-history page envelope with passthrough extras.\n\nDeclare only ``items``: ``total``, ``offset``, ``limit``, and any other\nupstream keys round-trip through ``extra=\"allow\"`` without int coercion.\n``items`` accepts a list of typed rows or non-mapping fallbacks, or any\nnon-list upstream value so a bad page shape does not fail validation.\n\n:param items: The page's rows when upstream sent a list; otherwise the raw\n    upstream value (including absence, via ``exclude_unset`` on dump).",
@@ -239,6 +226,19 @@
           "anonymized_entities"
         ],
         "title": "ExtensionsTaskResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
         "type": "object"
       },
       "ServiceTypeEnum": {

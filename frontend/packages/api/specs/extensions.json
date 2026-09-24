@@ -466,6 +466,65 @@
         "title": "ExecutionEvent",
         "type": "object"
       },
+      "ExtensionsHistoryPayload": {
+        "additionalProperties": true,
+        "description": "Represent the PMM Extensions task-history page envelope with passthrough extras.\n\nDeclare only ``items``: ``total``, ``offset``, ``limit``, and any other\nupstream keys round-trip through ``extra=\"allow\"`` without int coercion.\n``items`` accepts a list of typed rows or non-mapping fallbacks, or any\nnon-list upstream value so a bad page shape does not fail validation.\n\n:param items: The page's rows when upstream sent a list; otherwise the raw\n    upstream value (including absence, via ``exclude_unset`` on dump).",
+        "properties": {
+          "items": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ExtensionsHistoryPayloadRow"
+                    },
+                    {}
+                  ]
+                },
+                "type": "array"
+              },
+              {}
+            ],
+            "title": "Items"
+          }
+        },
+        "title": "ExtensionsHistoryPayload",
+        "type": "object"
+      },
+      "ExtensionsHistoryPayloadRow": {
+        "additionalProperties": true,
+        "description": "Carry one history-page row's fields the actor rewrite may resolve.\n\nA non-mapping ``task`` stays on the ``Any`` arm so the row still validates\nand its own ``executed_by`` can resolve. Unknown upstream keys survive via\n``extra=\"allow\"``.\n\n:param executed_by: Actor that ran the task. Typed as ``Any`` so an\n    unexpected shape validates and is left alone by the rewrite.\n:param task: Nested task carrying actor fields when it is a mapping;\n    otherwise the raw upstream value.",
+        "properties": {
+          "executed_by": {
+            "title": "Executed By"
+          },
+          "task": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExtensionsHistoryPayloadTask"
+              },
+              {}
+            ],
+            "title": "Task"
+          }
+        },
+        "title": "ExtensionsHistoryPayloadRow",
+        "type": "object"
+      },
+      "ExtensionsHistoryPayloadTask": {
+        "additionalProperties": true,
+        "description": "Carry the nested-task actor fields the history rewrite may resolve.\n\n:param created_by: Actor for the nested task's creator. Typed as ``Any`` so\n    an unexpected upstream shape validates and round-trips unchanged.\n:param last_updated_by: Actor for the nested task's last updater, on the\n    same permissive terms as ``created_by``.",
+        "properties": {
+          "created_by": {
+            "title": "Created By"
+          },
+          "last_updated_by": {
+            "title": "Last Updated By"
+          }
+        },
+        "title": "ExtensionsHistoryPayloadTask",
+        "type": "object"
+      },
       "ExtensionsTaskHistoryResponse": {
         "description": "Represent a task-history row as PMM Extensions serves it, with actors resolved.\n\n:param task: The task this execution belongs to, carrying resolved actors.\n:param executed_by: Display name for the actor that ran the task: the\n    provider's username when resolvable, a system label for\n    system-initiated work, otherwise the stored identifier. ``None`` when\n    none was recorded.",
         "properties": {
@@ -1178,65 +1237,6 @@
           "id"
         ],
         "title": "Schema",
-        "type": "object"
-      },
-      "ExtensionsHistoryPayload": {
-        "additionalProperties": true,
-        "description": "Represent the PMM Extensions task-history page envelope with passthrough extras.\n\nDeclare only ``items``: ``total``, ``offset``, ``limit``, and any other\nupstream keys round-trip through ``extra=\"allow\"`` without int coercion.\n``items`` accepts a list of typed rows or non-mapping fallbacks, or any\nnon-list upstream value so a bad page shape does not fail validation.\n\n:param items: The page's rows when upstream sent a list; otherwise the raw\n    upstream value (including absence, via ``exclude_unset`` on dump).",
-        "properties": {
-          "items": {
-            "anyOf": [
-              {
-                "items": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/ExtensionsHistoryPayloadRow"
-                    },
-                    {}
-                  ]
-                },
-                "type": "array"
-              },
-              {}
-            ],
-            "title": "Items"
-          }
-        },
-        "title": "ExtensionsHistoryPayload",
-        "type": "object"
-      },
-      "ExtensionsHistoryPayloadRow": {
-        "additionalProperties": true,
-        "description": "Carry one history-page row's fields the actor rewrite may resolve.\n\nA non-mapping ``task`` stays on the ``Any`` arm so the row still validates\nand its own ``executed_by`` can resolve. Unknown upstream keys survive via\n``extra=\"allow\"``.\n\n:param executed_by: Actor that ran the task. Typed as ``Any`` so an\n    unexpected shape validates and is left alone by the rewrite.\n:param task: Nested task carrying actor fields when it is a mapping;\n    otherwise the raw upstream value.",
-        "properties": {
-          "executed_by": {
-            "title": "Executed By"
-          },
-          "task": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ExtensionsHistoryPayloadTask"
-              },
-              {}
-            ],
-            "title": "Task"
-          }
-        },
-        "title": "ExtensionsHistoryPayloadRow",
-        "type": "object"
-      },
-      "ExtensionsHistoryPayloadTask": {
-        "additionalProperties": true,
-        "description": "Carry the nested-task actor fields the history rewrite may resolve.\n\n:param created_by: Actor for the nested task's creator. Typed as ``Any`` so\n    an unexpected upstream shape validates and round-trips unchanged.\n:param last_updated_by: Actor for the nested task's last updater, on the\n    same permissive terms as ``created_by``.",
-        "properties": {
-          "created_by": {
-            "title": "Created By"
-          },
-          "last_updated_by": {
-            "title": "Last Updated By"
-          }
-        },
-        "title": "ExtensionsHistoryPayloadTask",
         "type": "object"
       },
       "ServiceEnum": {
