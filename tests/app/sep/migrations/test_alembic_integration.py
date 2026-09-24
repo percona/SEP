@@ -37,6 +37,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
 from alembic.util import CommandError
+from cryptography.fernet import Fernet
 from rich.logging import RichHandler
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.exc import IntegrityError
@@ -737,20 +738,29 @@ def _stored_value(sync_url: str) -> dict[str, str]:
 def test_retoken_revision_moves_the_ciphertext_marker_forward_only(
     sep_alembic_config,
 ):
-    """Move ``sep.enc.v1.`` markers to ``extensions.enc.v1.`` and keep them there.
+    """Move ``sep.enc.v1.`` envelopes to ``extensions.enc.v1.`` and keep them there.
 
     The credential URL carries its marked token inside the userinfo segment, so
-    the rewrite has to reach a marker that is not at the start of its leaf, and
-    a plaintext leaf rides along to prove it is left byte-identical. The
-    downgrade keeps the new marker because the earlier revisions' downgrades run
-    this release's code, which reads the new marker alone.
+    the rewrite has to reach an envelope that is not the whole leaf. Plaintext
+    carrying the old marker rides along in the same row, as a whole leaf over a
+    non-token payload, as a URL password over one, and as a prefix in the middle
+    of prose, to prove only a well-formed envelope moves. The downgrade keeps
+    the new marker because the earlier revisions' downgrades run this release's
+    code, which reads the new marker alone.
     """
     cfg, sync_url = sep_alembic_config
     command.upgrade(cfg, _SEP_PRE_RETOKEN_REVISION)
-    legacy = {
-        "password": "sep.enc.v1.gAAAAB-token",
-        "endpoint": "https://user:sep.enc.v1.gAAAAB-token@pmm.example.com/",
+    token = Fernet(Fernet.generate_key()).encrypt(b"secret").decode()
+    plaintext = {
+        "plain_leaf": "sep.enc.v1.operator-secret",
+        "plain_endpoint": "https://user:sep.enc.v1.operator-secret@pmm.example.com/",
+        "note": f"rotate sep.enc.v1.{token} next week",
         "name": "plain",
+    }
+    legacy = {
+        "password": f"sep.enc.v1.{token}",
+        "endpoint": f"https://user:sep.enc.v1.{token}@pmm.example.com/",
+        **plaintext,
     }
 
     engine = create_engine(sync_url)
@@ -766,9 +776,9 @@ def test_retoken_revision_moves_the_ciphertext_marker_forward_only(
         engine.dispose()
 
     migrated = {
-        "password": "extensions.enc.v1.gAAAAB-token",
-        "endpoint": "https://user:extensions.enc.v1.gAAAAB-token@pmm.example.com/",
-        "name": "plain",
+        "password": f"extensions.enc.v1.{token}",
+        "endpoint": f"https://user:extensions.enc.v1.{token}@pmm.example.com/",
+        **plaintext,
     }
     command.upgrade(cfg, _SEP_RETOKEN_REVISION)
     assert _stored_value(sync_url) == migrated
