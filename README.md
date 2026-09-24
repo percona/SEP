@@ -99,7 +99,7 @@ In Casdoor's web interface, navigate to Identity > Applications > app-built-in
 and scroll to **Redirect URLs**.
 
 The Redirect URL you should add depends on how PMM Extensions is running (see [Usage](#usage)).
-For example, if you're running PMM Extensions in your localhost with HTTP in port 8000, you shoul
+For example, if you're running PMM Extensions in your localhost with HTTP in port 8000, you should
 add the URLs `http://localhost:8000/oauth/callback` and `http://127.0.0.1:8000/oauth/callback`.
 
 ![image](https://github.com/user-attachments/assets/8a562b77-00c7-4192-bba3-d22e3514766f)

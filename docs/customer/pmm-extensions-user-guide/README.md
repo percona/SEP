@@ -1,6 +1,6 @@
 # PMM Extensions User Guide
 
-A customer-facing introduction to the **PMM Extensions** and a short
+A customer-facing introduction to **PMM Extensions** and a short
 description of every app: what it is for and what it runs on your database hosts.
 
 ## Contents
