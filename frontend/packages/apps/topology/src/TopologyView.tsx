@@ -40,7 +40,7 @@ import { ClusterGroup } from './ClusterGroup';
 import { MySQLNode } from './MySQLNode';
 import { UnknownSourceNode } from './UnknownSourceNode';
 import { applyDagreLayout } from './layout';
-import { useAuth } from '@sep/api';
+import { useAuth } from '@pmm-extensions/api';
 import { useCollectTopology, useTopologyResult } from './hooks';
 import type { TopologyEdge, TopologyGraph, TopologyNode } from './types';
 

@@ -23,7 +23,7 @@ import Skeleton from '@mui/material/Skeleton';
 import Typography from '@mui/material/Typography';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { useSnackbar } from 'notistack';
-import { useAppTask, useAuth, useUpdateAppTask, type AppSchema } from '@sep/api';
+import { useAppTask, useAuth, useUpdateAppTask, type AppSchema } from '@pmm-extensions/api';
 import {
   SchemaFormRenderer,
   coerceFormValues,

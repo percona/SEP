@@ -60,7 +60,7 @@ from app.core.settings_override.resolution import (
 )
 from app.core.utils.date_time import utc_now
 from app.core.utils.fields import CredentialHttpUrl, StrHttpUrl
-from app.sep.config import DeliveryPlanInputs, ExtensionsSettings
+from app.extensions.config import DeliveryPlanInputs, ExtensionsSettings
 from app.tasks.config import TasksSettings
 from app.tasks.execution.executors.nomad.models import NomadExecutor
 

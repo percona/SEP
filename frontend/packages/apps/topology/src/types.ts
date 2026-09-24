@@ -17,7 +17,7 @@
 
 /**
  * Backend topology shapes shared between the API hooks, layout helpers,
- * and the React Flow node/edge components. Mirrors `app/sep/apps/topology/
+ * and the React Flow node/edge components. Mirrors `app/extensions/apps/topology/
  * topology.py::build_topology_graph` — keep keys in sync.
  */
 

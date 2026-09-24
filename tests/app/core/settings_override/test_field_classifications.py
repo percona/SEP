@@ -17,7 +17,7 @@
 
 Assert the reclassifications (``APP_DRAIN`` -> NESTED_ONLY; ``SNIPPETS_BASE_URL``,
 ``SYNC_FILTER``, ``LOGGING`` -> HOT) and the per-leaf ``advanced`` markers on the
-NOMAD, PMM, SEP, and Tasks settings landed with the intended reload classification
+NOMAD, PMM, PMM Extensions, and Tasks settings landed with the intended reload classification
 -- and, critically, that the excluded connection leaves (``endpoint``, ``api_key``)
 stayed unmarked and their override eligibility is unchanged.
 """
@@ -35,8 +35,8 @@ from app.core.settings_override.registry import (
     is_nested_overridable_parent,
     ReloadClassification,
 )
-from app.sep.config import ExtensionsSettings
-from app.sep.snippets.config import SnippetsSettings
+from app.extensions.config import ExtensionsSettings
+from app.extensions.snippets.config import SnippetsSettings
 from app.tasks.config import TasksSettings
 from app.tasks.execution.executors.nomad.models import NomadExecutor
 
@@ -143,7 +143,7 @@ class TestAdvancedMarkers:
             ReloadClassification.HOT
         )
 
-    def test_sep_artifact_download_ttl_advanced(self) -> None:
+    def test_extensions_artifact_download_ttl_advanced(self) -> None:
         """Assert ``ARTIFACT_DOWNLOAD_TTL`` is HOT and advanced."""
         assert _advanced(ExtensionsSettings, "ARTIFACT_DOWNLOAD_TTL") is True
         assert (

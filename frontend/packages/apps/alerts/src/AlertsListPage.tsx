@@ -35,7 +35,7 @@ import {
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 import SettingsIcon from '@mui/icons-material/Settings';
-import { useAuth } from '@sep/api';
+import { useAuth } from '@pmm-extensions/api';
 import { useAlertBackups, useAlertsIndex } from './hooks';
 import { AlertsWizard } from './AlertsWizard';
 import type { AlertTemplate, WizardMode } from './types';

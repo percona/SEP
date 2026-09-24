@@ -25,7 +25,7 @@ import type { Route } from '@playwright/test';
  * and an empty array collapses the sidebar to Dashboard alone.
  */
 
-/** Shape of one entry in the ``GET /api/apps/`` response (mirrors `@sep/api`'s `EnabledApp`). */
+/** Shape of one entry in the ``GET /api/apps/`` response (mirrors `@pmm-extensions/api`'s `EnabledApp`). */
 export interface MockEnabledApp {
   app_key: string;
   enabled: boolean;

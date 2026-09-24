@@ -16,13 +16,13 @@
  */
 
 // QA-only Vite config — used when running end-to-end QA against an
-// isolated SEP backend instance on a non-standard port.
+// isolated PMM Extensions backend instance on a non-standard port.
 // Parameterized via env vars so each parallel QA session can point at
 // a different backend port without editing this file:
 //
-//   SEP_QA_BACKEND     URL of the running QA SEP instance
+//   EXTENSIONS_QA_BACKEND     URL of the running QA PMM Extensions instance
 //                      (default 'http://127.0.0.1:18002')
-//   SEP_QA_VITE_PORT   Port for this Vite dev server  (default 15174)
+//   EXTENSIONS_QA_VITE_PORT   Port for this Vite dev server  (default 15174)
 //
 // `cookieDomainRewrite: 'localhost'` rewrites Set-Cookie domains from
 // the backend's 127.0.0.1 to localhost so the browser persists the
@@ -32,8 +32,8 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
-const BACKEND = process.env.SEP_QA_BACKEND ?? 'http://127.0.0.1:18002';
-const PORT = Number(process.env.SEP_QA_VITE_PORT || 15174);
+const BACKEND = process.env.EXTENSIONS_QA_BACKEND ?? 'http://127.0.0.1:18002';
+const PORT = Number(process.env.EXTENSIONS_QA_VITE_PORT || 15174);
 
 const proxyEntry = {
   target: BACKEND,
@@ -64,7 +64,7 @@ export default defineConfig({
     strictPort: true,
     proxy: {
       '/api': proxyEntry,
-      '/sep_app': proxyEntry,
+      '/extensions_app': proxyEntry,
       '/stream-logs': proxyEntry,
       '/execution-events': proxyEntry,
       '/files': proxyEntry,

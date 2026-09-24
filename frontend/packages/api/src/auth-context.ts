@@ -22,8 +22,8 @@ import type { User } from './types/api';
  * Session state owned by the shell's ``AuthProvider``.
  *
  * The context lives here, at the root of the frontend dependency graph, so the
- * framework and every app package can read it — they all depend on ``@sep/api``
- * and none of them may depend on ``@sep/shell``. The provider itself, and all
+ * framework and every app package can read it — they all depend on ``@pmm-extensions/api``
+ * and none of them may depend on ``@pmm-extensions/shell``. The provider itself, and all
  * token/session bookkeeping, stays in the shell.
  *
  * One context carries both the session and the capability derived from it, so a
@@ -99,9 +99,9 @@ export const UNAUTHENTICATED_SESSION: AuthSession = Object.freeze({
  * this control" render needs.
  *
  * A test fixture living in shipped code, deliberately. It belongs beside the
- * constant it mirrors, and the alternative — a ``@sep/test-utils`` export —
- * would drag ``@sep/api`` into every package's vitest setup file, where the
- * eagerly-loaded real module defeats ``vi.mock('@sep/api')`` in suites that
+ * constant it mirrors, and the alternative — a ``@pmm-extensions/test-utils`` export —
+ * would drag ``@pmm-extensions/api`` into every package's vitest setup file, where the
+ * eagerly-loaded real module defeats ``vi.mock('@pmm-extensions/api')`` in suites that
  * have nothing to do with auth.
  *
  * Do not hand this to ``AuthContext`` in application code: the shell's

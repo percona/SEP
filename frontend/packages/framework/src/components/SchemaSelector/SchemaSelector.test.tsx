@@ -25,10 +25,10 @@ import { SchemaSelector } from './SchemaSelector';
 import type { ServiceOption } from '../../hooks/useServices';
 import type { SchemaOption } from '../../hooks/useSchemas';
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
 }));
-import { apiClient } from '@sep/api';
+import { apiClient } from '@pmm-extensions/api';
 const mocked = apiClient as unknown as { get: ReturnType<typeof vi.fn> };
 
 function makeClient() {

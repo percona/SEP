@@ -22,7 +22,7 @@ it has no ``depends_on``, which is why the alembic one-shots carry their own
 priority-20 API programs it is ordered behind, and those need seconds to accept
 connections. Beat's schedule is persisted by the ``sqlalchemy`` scheduler, so
 anything already overdue is dispatched about a second in, and a periodic task whose
-first act is to call SEP's own API through ``INVENTORY_ENDPOINT`` / ``TASKS_ENDPOINT``
+first act is to call PMM Extensions' own API through ``INVENTORY_ENDPOINT`` / ``TASKS_ENDPOINT``
 fails on connect through no fault of its own. That is the side-car form of the race
 :func:`app.main.start_celery_beat` closes for ``python -m app.main --start-celery``.
 
@@ -32,8 +32,8 @@ connect error being guarded against. The ``celery-worker`` program stays ungated
 it idles harmlessly until a task arrives.
 
 All three listeners are waited on, not only the two a periodic task dials: the
-``sep`` service's lifespan is what seeds the beat schedule
-(:func:`app.sep.db.seed.init_sep_db`), so beat starting behind it also starts
+``extensions`` service's lifespan is what seeds the beat schedule
+(:func:`app.extensions.db.seed.init_extensions_db`), so beat starting behind it also starts
 against a seeded, gating-applied schedule.
 
 Readiness is :func:`app.core.health.wait_for_api_ready`, the same gate the
@@ -49,14 +49,14 @@ from time import monotonic
 
 from app.core.config import BaseYamlAppSettings, settings
 from app.core.health import wait_for_api_ready
+from app.extensions.config import extensions_settings
 from app.inventory.config import inventory_settings
-from app.sep.config import sep_settings
 from app.tasks.config import tasks_settings
 
 logger = logging.getLogger(__name__)
 
 GATED_SERVICES: tuple[tuple[str, BaseYamlAppSettings], ...] = (
-    ("sep", sep_settings),
+    ("extensions", extensions_settings),
     ("inventory", inventory_settings),
     ("tasks", tasks_settings),
 )
@@ -77,7 +77,7 @@ def wait_for_apis() -> bool:
     :return: ``True`` when every gated service answered ``200``, ``False`` when any
         was skipped or ran out of budget.
     """
-    deadline = monotonic() + sep_settings.API_READINESS_TIMEOUT
+    deadline = monotonic() + extensions_settings.API_READINESS_TIMEOUT
     all_ready = True
     for name, service in GATED_SERVICES:
         if service.SSL_CERTFILE or service.SSL_KEYFILE:
@@ -100,7 +100,7 @@ def wait_for_apis() -> bool:
             service.UVICORN_PORT,
             allowed_hosts=service.ALLOWED_HOSTS,
             timeout=remaining,
-            interval=sep_settings.API_READINESS_POLL_INTERVAL,
+            interval=extensions_settings.API_READINESS_POLL_INTERVAL,
         ):
             all_ready = False
     return all_ready
@@ -117,7 +117,7 @@ def main() -> None:
     if not wait_for_apis():
         logger.error(
             "Starting Celery beat without every HTTP API confirmed ready. An overdue "
-            "periodic task that calls SEP's own API may fail to connect on its first "
+            "periodic task that calls PMM Extensions' own API may fail to connect on its first "
             "run."
         )
 

@@ -48,7 +48,12 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import RemoveCircleOutlineIcon from '@mui/icons-material/RemoveCircleOutline';
 import SearchIcon from '@mui/icons-material/Search';
-import { ApiError, DEFAULT_APP_LIST_LIMIT, DEFAULT_APP_LIST_OFFSET, useAuth } from '@sep/api';
+import {
+  ApiError,
+  DEFAULT_APP_LIST_LIMIT,
+  DEFAULT_APP_LIST_OFFSET,
+  useAuth,
+} from '@pmm-extensions/api';
 import {
   ActionErrorAlert,
   actionErrorMessage,
@@ -56,7 +61,7 @@ import {
   useDebouncedValue,
   useSnippetDownload,
   type ActionErrorState,
-} from '@sep/framework';
+} from '@pmm-extensions/framework';
 import {
   useSnippets,
   useApproveSnippet,

@@ -57,7 +57,7 @@ from app.core.settings_override.secret_storage import (
     unmark_secret_leaves,
 )
 from app.core.utils.fields import CredentialHttpUrl
-from app.sep.config import ExtensionsSettings
+from app.extensions.config import ExtensionsSettings
 from app.tasks.config import TasksSettings
 from tests.app.encryption_fixtures import (
     FERNET_SHAPED_PLAINTEXT,

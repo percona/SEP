@@ -16,7 +16,7 @@
 """Resolve :mod:`ast` import nodes to the dotted paths an import boundary reads.
 
 Two guards walk a source tree and classify what each import reaches:
-:mod:`tests.app.sep.test_import_boundary` over ``app/``, and
+:mod:`tests.app.extensions.test_import_boundary` over ``app/``, and
 :mod:`tests.app.test_factories_boundary` over the root of the test tree. Both
 need the same two answers first -- which package a module resolves its relative
 imports against, and what a ``from ... import`` resolves to once that package is

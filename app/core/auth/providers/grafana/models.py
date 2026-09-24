@@ -55,7 +55,7 @@ from app.core.utils.fields import NonEmptyStr
 
 logger = logging.getLogger(__name__)
 
-ASSERTION_SALT: Final = "sep.auth.grafana.v1"
+ASSERTION_SALT: Final = "extensions.auth.grafana.v1"
 
 _SERVICE_ACCOUNT_BEARER_PREFIX: Final = "glsa_"
 
@@ -91,7 +91,7 @@ _GRAFANA_ORG_ROLE_TO_USER_ROLE: Final[Mapping[str, UserRole]] = {
 
 
 def _rank_org_role(name: str | None) -> UserRole:
-    """Return the SEP role a Grafana org role names.
+    """Return the PMM Extensions role a Grafana org role names.
 
     Grafana models "holds no role" as ``"None"`` or as an absent field, so both
     rank lowest without comment. A value Grafana does not define is schema
@@ -125,13 +125,13 @@ class _GrafanaUserRecord(TypedDict):
 
 
 def _service_account_uuid(service_account_id: int) -> UUID:
-    """Return the SEP id of a Grafana service account.
+    """Return the PMM Extensions id of a Grafana service account.
 
     The namespace differs from the one human ids derive from, so an account
     never shares an id with a human whatever numeric ids Grafana assigns.
 
     :param service_account_id: Grafana's numeric service-account id.
-    :return: The stable SEP id.
+    :return: The stable PMM Extensions id.
     """
     return uuid5(NAMESPACE_URL, f"grafana-service-account:{service_account_id}")
 
@@ -201,7 +201,7 @@ def _active_grafana_sdk() -> GrafanaSDK:
 class GrafanaTokenPayload(BaseTokenPayload):
     """Represent the payload of a Grafana token.
 
-    Grafana issues no JWT that SEP introspects, so this model exists only to
+    Grafana issues no JWT that PMM Extensions introspects, so this model exists only to
     complete the provider bundle; it is never constructed at runtime.
     """
 
@@ -219,7 +219,7 @@ class GrafanaTokenPayload(BaseTokenPayload):
 class GrafanaUser(BaseUser):
     """Represent a Grafana user.
 
-    The per-request credential is a SEP-signed identity assertion minted at
+    The per-request credential is a PMM Extensions signed identity assertion minted at
     login (:meth:`get_oauth_token`) and verified locally (:meth:`from_jwt`), so
     no Grafana call is needed to authenticate a request. Its ``id`` is a UUIDv5
     derived from Grafana's numeric user id -- widening the base ``UUID4`` field --
@@ -304,7 +304,7 @@ class GrafanaUser(BaseUser):
         :param user: The authenticated user.
         :param grafana: The active SDK, read for the access-token lifetime.
         :return: An OAuth token whose ``access_token`` / ``refresh_token`` are
-            SEP-signed assertions.
+            PMM Extensions signed assertions.
         """
         empty = ""
         bearer = "Bearer"
@@ -323,7 +323,7 @@ class GrafanaUser(BaseUser):
     ) -> Self:
         """Build a user from a Grafana ``/api/user`` or user-lookup record.
 
-        Grafana's numeric ``id`` is the stable subject: the SEP UUID is derived
+        Grafana's numeric ``id`` is the stable subject: the PMM Extensions UUID is derived
         from it so a username change does not change the identity.
 
         The server-admin flag outranks every org membership; without it the
@@ -400,12 +400,12 @@ class GrafanaUser(BaseUser):
         Grafana's verdict decides; ``/api/user`` reports a disabled account as
         enabled, so the flag is read from the record. The user carries a freshly minted exchange assertion as its
         ``access_token``, so the Tasks and Inventory APIs a request calls
-        validate a SEP credential locally and never receive the token.
+        validate a PMM Extensions credential locally and never receive the token.
 
         :param token: The ``glsa_``-prefixed Bearer credential.
         :return: The service account's ``GrafanaUser``.
         :raises HTTPUnauthorizedException: If Grafana rejects the token, the
-            account is outside SEP's org, or it is disabled.
+            account is outside PMM Extensions' org, or it is disabled.
         :raises GrafanaException: If Grafana could not decide.
         """
         record = await _active_grafana_sdk().verify_service_account_token(token)
@@ -433,13 +433,13 @@ class GrafanaUser(BaseUser):
         The password grant authenticates against Grafana once and mints the pair;
         the refresh grant verifies a prior refresh assertion locally and re-mints a
         rotated pair with no Grafana call. Both ``access_token`` and
-        ``refresh_token`` are SEP-signed assertions rather than Grafana credentials
+        ``refresh_token`` are PMM Extensions signed assertions rather than Grafana credentials
         (Grafana issues no OAuth tokens).
 
         :param code: Unsupported -- Grafana has no authorization-code grant.
         :param username: The Grafana username (password grant).
         :param password: The Grafana password (password grant).
-        :param refresh_token: A prior SEP-signed refresh assertion (refresh grant).
+        :param refresh_token: A prior PMM Extensions signed refresh assertion (refresh grant).
         :return: An OAuth token whose ``access_token`` / ``refresh_token`` are the
             minted assertions.
         :raises GrafanaException: For the authorization-code grant or missing
@@ -493,7 +493,7 @@ class GrafanaUser(BaseUser):
     async def oauth_token_from_session(session: str) -> OAuthToken | None:
         """Mint an access + refresh assertion pair from an ambient Grafana session.
 
-        Validate the ambient session cookie value against Grafana and mint a SEP
+        Validate the ambient session cookie value against Grafana and mint a PMM Extensions
         token pair, mirroring the password grant without a fresh ``login()`` --
         the caller already holds the cookie off the incoming request.
 
@@ -537,7 +537,7 @@ class GrafanaUser(BaseUser):
 
     @staticmethod
     async def invalidate_oauth_token(access_token: str) -> None:  # noqa: ARG004
-        """Skip invalidation: Grafana holds no SEP-minted assertion to revoke.
+        """Skip invalidation: Grafana holds no PMM Extensions minted assertion to revoke.
 
         :param access_token: The access token that would be invalidated.
         """
@@ -548,7 +548,7 @@ class GrafanaUser(BaseUser):
         username: str,  # noqa: ARG004
         exclude_tokens: Sequence[str] = (),  # noqa: ARG004
     ) -> None:
-        """Skip revocation: SEP mints stateless assertions with nothing to revoke.
+        """Skip revocation: PMM Extensions mints stateless assertions with nothing to revoke.
 
         :param username: The username whose tokens would be invalidated.
         :param exclude_tokens: Access tokens that would be excluded.
@@ -565,7 +565,7 @@ class GrafanaUser(BaseUser):
         same token already reads for :meth:`get_users`. Every other status
         propagates: a 401 means the credential itself is bad and a 404 means the
         user is genuinely absent, and re-reading a listing answers neither.
-        Nothing in this provider raises a SEP-side 403, so the status is
+        Nothing in this provider raises a PMM Extensions side 403, so the status is
         unambiguous here.
 
         The lookup endpoint carries the server-admin flag but no org memberships,
@@ -684,7 +684,7 @@ class GrafanaUser(BaseUser):
 
     @classmethod
     async def _service_account_records(cls) -> list[GrafanaServiceAccountRecord]:
-        """Read SEP's org service accounts, refusing a payload off contract.
+        """Read PMM Extensions' org service accounts, refusing a payload off contract.
 
         :return: The listing rows.
         :raises HTTPException: Whatever the service-account listing raised.
@@ -767,7 +767,7 @@ class GrafanaUser(BaseUser):
         is verified against Grafana (:meth:`_from_service_account_token`); it
         never reaches assertion decoding.
 
-        Any other credential is a SEP assertion. Try each accepted type in turn
+        Any other credential is a PMM Extensions assertion. Try each accepted type in turn
         so every candidate is checked against its own lifetime. The expiry is
         enforced before the ``typ`` claim is read, so one pass with a widened
         lifetime would grant a short-lived exchange assertion the full

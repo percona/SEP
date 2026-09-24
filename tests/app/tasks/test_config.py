@@ -28,9 +28,9 @@ from app.core.settings_override.registry import (
     is_explicit_not_overridable,
     ReloadClassification,
 )
-from app.sep.sync.syncers.mysql.syncer import MySQLSyncer
-from app.sep.sync.syncers.pmm import PMMSyncer
-from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.extensions.sync.syncers.mysql.syncer import MySQLSyncer
+from app.extensions.sync.syncers.pmm import PMMSyncer
+from app.extensions.sync.syncers.system_facts.syncer import SystemFactsSyncer
 from app.tasks.config import (
     MAX_SCHEDULED_SYNCER_LENGTH,
     PreExecutionCheckMode,
@@ -233,7 +233,7 @@ class TestTasksSettings:
 
     def test_default_hook_module_allowlist(self) -> None:
         """Assert the default allow-list admits the namespace holding the task apps."""
-        assert tasks_settings.HOOK_MODULE_ALLOWLIST == ("app.sep.apps",)
+        assert tasks_settings.HOOK_MODULE_ALLOWLIST == ("app.extensions.apps",)
 
     def test_hook_module_allowlist_is_not_runtime_overridable(self) -> None:
         """Assert the allow-list cannot be widened through the settings API.
@@ -258,7 +258,7 @@ class TestTasksSettings:
             "app..acme",
             " app.acme.apps",
             "",
-            "app.sep.apps:builder",
+            "app.extensions.apps:builder",
         ],
     )
     def test_hook_module_allowlist_rejects_a_root_nothing_can_match(
@@ -275,11 +275,11 @@ class TestTasksSettings:
     def test_hook_module_allowlist_accepts_an_extra_root(self) -> None:
         """Accept a well-formed dotted root added alongside the shipped default."""
         settings = TasksSettings(
-            HOOK_MODULE_ALLOWLIST=("app.sep.apps", "acme_plugins.hooks")
+            HOOK_MODULE_ALLOWLIST=("app.extensions.apps", "acme_plugins.hooks")
         )
 
         assert settings.HOOK_MODULE_ALLOWLIST == (
-            "app.sep.apps",
+            "app.extensions.apps",
             "acme_plugins.hooks",
         )
 
@@ -290,7 +290,7 @@ class TestSyncerNameConstants:
     def test_the_hand_kept_syncer_paths_match_their_classes(self) -> None:
         """Pin each shared syncer-path constant against the class it names.
 
-        The tasks service never imports the sep syncers, so the constants are a
+        The tasks service never imports the extensions syncers, so the constants are a
         hand-kept copy — but a test can import them, and nothing else compares the
         two. Settings validate a syncer path's shape and not its existence, so a
         renamed syncer module would otherwise leave these stale and every

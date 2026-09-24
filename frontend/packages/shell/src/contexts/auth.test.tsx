@@ -49,7 +49,7 @@ function renderAuth() {
 }
 
 describe('AuthProvider bootstrap — ambient Grafana SSO', () => {
-  it('auto-logs-in from an ambient session when no SEP refresh cookie exists', async () => {
+  it('auto-logs-in from an ambient session when no PMM Extensions refresh cookie exists', async () => {
     server.use(
       http.post(REFRESH_URL, () => HttpResponse.json({ detail: 'no cookie' }, { status: 401 })),
       http.post(SESSION_URL, () => HttpResponse.json({ access_token: 'ambient', expires_in: 300 })),
@@ -77,10 +77,12 @@ describe('AuthProvider bootstrap — ambient Grafana SSO', () => {
     expect(screen.getByTestId('authed')).toHaveTextContent('no');
   });
 
-  it('does not attempt ambient session when the SEP refresh succeeds', async () => {
+  it('does not attempt ambient session when the PMM Extensions refresh succeeds', async () => {
     const sessionCalled = vi.fn();
     server.use(
-      http.post(REFRESH_URL, () => HttpResponse.json({ access_token: 'sep', expires_in: 300 })),
+      http.post(REFRESH_URL, () =>
+        HttpResponse.json({ access_token: 'extensions', expires_in: 300 }),
+      ),
       http.post(SESSION_URL, () => {
         sessionCalled();
         return HttpResponse.json({ access_token: 'ambient', expires_in: 300 });
@@ -108,7 +110,9 @@ describe('useAuth — capability derivation', () => {
 
   it('derives canMutate from the administrator flag for an admin session', async () => {
     server.use(
-      http.post(REFRESH_URL, () => HttpResponse.json({ access_token: 'sep', expires_in: 300 })),
+      http.post(REFRESH_URL, () =>
+        HttpResponse.json({ access_token: 'extensions', expires_in: 300 }),
+      ),
       http.get(ME_URL, () => HttpResponse.json({ username: 'root', isAdmin: true })),
     );
 
@@ -121,7 +125,9 @@ describe('useAuth — capability derivation', () => {
 
   it('withholds canMutate for an authenticated non-admin session', async () => {
     server.use(
-      http.post(REFRESH_URL, () => HttpResponse.json({ access_token: 'sep', expires_in: 300 })),
+      http.post(REFRESH_URL, () =>
+        HttpResponse.json({ access_token: 'extensions', expires_in: 300 }),
+      ),
       http.get(ME_URL, () => HttpResponse.json({ username: 'operator', isAdmin: false })),
     );
 

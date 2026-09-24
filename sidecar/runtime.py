@@ -25,7 +25,7 @@ RETRY_INTERVAL_SECONDS = 3.0
 
 
 def state_dir() -> Path:
-    """Return the directory SEP persists its minted credentials in.
+    """Return the directory PMM Extensions persists its minted credentials in.
 
     :return: The configured directory, or the image's own.
     """

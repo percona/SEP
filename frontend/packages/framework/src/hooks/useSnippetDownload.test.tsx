@@ -17,7 +17,7 @@
 
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiClient } from '@sep/api';
+import { ApiError, apiClient } from '@pmm-extensions/api';
 import { QueryWrapper } from '../../tests/queryWrapper';
 import { useSnippetDownload } from './useSnippetDownload';
 

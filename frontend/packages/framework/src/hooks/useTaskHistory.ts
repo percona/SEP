@@ -20,21 +20,21 @@ import {
   apiClient,
   isRunningStatus,
   RUNNING_STATUSES,
-  type SepComponents,
+  type ExtensionsComponents,
   type TaskHistoryStatus,
   type TasksComponents,
-} from '@sep/api';
+} from '@pmm-extensions/api';
 
 export type TaskHistoryEntry = TasksComponents['schemas']['TaskHistoryResponse'];
 export type PaginatedTaskHistory =
   TasksComponents['schemas']['PaginatedResponse_TaskHistoryResponse_'];
 
 /** Optional JSON body for ``POST .../execute`` (chain wiring, schedule ETA, etc.). */
-export type TaskExecuteBody = SepComponents['schemas']['framework__TaskExecuteWrite'];
+export type TaskExecuteBody = ExtensionsComponents['schemas']['framework__TaskExecuteWrite'];
 
 // The poll-while-running status set is owned by the ``api`` package (the lower
 // layer) so the schema-driven list page and this hook share one definition.
-// Re-exported here to keep the ``@sep/framework`` import surface stable.
+// Re-exported here to keep the ``@pmm-extensions/framework`` import surface stable.
 export { isRunningStatus, RUNNING_STATUSES };
 export type { TaskHistoryStatus };
 
@@ -203,7 +203,7 @@ export function useStopTaskHistory() {
 /**
  * Dispatch a saved task for immediate execution.
  *
- * The request is routed through the SEP-level app gateway
+ * The request is routed through the PMM Extensions level app gateway
  * (``POST /api/apps/{pluginName}/{taskName}/execute``) — the FE must not
  * call ``/api/tasks/*`` directly, as the Tasks sub-app is not exposed to the
  * browser in a production deployment. The app-task queries — the list and

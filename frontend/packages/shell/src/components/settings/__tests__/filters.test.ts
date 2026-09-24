@@ -16,7 +16,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { SettingClassGroup } from '@sep/api';
+import type { SettingClassGroup } from '@pmm-extensions/api';
 
 import {
   DEFAULT_SETTINGS_FILTERS,

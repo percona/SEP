@@ -16,8 +16,8 @@
  */
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { apiClient } from '@sep/api';
-import { downloadBlob } from '@sep/framework';
+import { apiClient } from '@pmm-extensions/api';
+import { downloadBlob } from '@pmm-extensions/framework';
 import type {
   ReportConfig,
   ReportData,

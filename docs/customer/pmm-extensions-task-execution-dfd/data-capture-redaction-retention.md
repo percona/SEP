@@ -122,7 +122,7 @@ In the current implementation:
 - Any authenticated OAuth user can retrieve task history by ID.
 - Any authenticated OAuth user can stream stdout/stderr logs for a task history ID.
 - Any authenticated OAuth user can list or stream configured output files for a finished task history ID.
-- The configured `SEP_INTERNAL_TOKEN` service principal can also authenticate to these APIs for internal service-to-service calls.
+- The configured `EXTENSIONS_INTERNAL_TOKEN` service principal can also authenticate to these APIs for internal service-to-service calls.
 - General task history and log APIs do not apply a per-user `executed_by` row filter.
 
 PMM Extensions does distinguish admin users for some operations, such as snippet approval and certain administrative routes, but task log viewing is not currently restricted to admin users only.
@@ -132,7 +132,7 @@ Customer access depends on deployment and identity configuration. The current PM
 Access is controlled by:
 
 - Grafana session exchange for human users in the shipped PMM-embedded deployment. The browser's PMM session cookie rides a same-origin request to `POST /api/oauth/session/exchange`; PMM Extensions validates the session against Grafana and returns a short-lived PMM Extensions-signed bearer in the response body — no PMM Extensions cookie is set and no refresh token is issued. Casdoor OAuth/JWT remains a configurable alternative.
-- Optional internal bearer-token authentication through `SEP_INTERNAL_TOKEN` for service-to-service calls.
+- Optional internal bearer-token authentication through `EXTENSIONS_INTERNAL_TOKEN` for service-to-service calls.
 - Transport security, including HTTPS at PMM's Nginx ingress and configured service-to-service TLS/mTLS for Extensions↔Tasks/Inventory and Tasks↔Nomad.
 - Deployment-level controls around network access, database access, Nomad API access, and infrastructure log access.
 
