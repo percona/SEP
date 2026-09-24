@@ -39,6 +39,7 @@ from app.core.exceptions import HTTPBadRequestException
 from app.core.settings_override.registry import ReloadClassification
 from app.core.settings_override.resolution import resolve_nested_field_metadata
 from app.core.utils import slugify, utc_now
+from app.core.utils.fields import PRESERVE_CREDENTIALS_CONTEXT
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.config import tasks_settings, TasksSettings
 from app.tasks.crud import (
@@ -67,10 +68,12 @@ from app.tasks.execution.executors.nomad.models import (
     _should_anonymize,
     _STALE_SKIP_TASK_NAME,
     _status_from_step_states,
+    NODE_STATUS_READY,
     NOMAD_DEAD_JOB_STATUS,
     nomad_task_states_to_execution_events,
     NomadAllocStatusEnum,
     NomadExecutor,
+    RAW_EXEC_DRIVER,
 )
 from app.tasks.execution.executors.nomad.steps import (
     LAUNCH_CHECK_EXIT_CODE,
@@ -686,6 +689,37 @@ class TestNomadExecutorApiKey:
         assert "hunter2" in mock_nomad_cls.call_args[1]["address"]
         assert "hunter2" in executor.base_url
 
+    def test_the_json_dump_masks_the_endpoint_password_without_a_key(self) -> None:
+        """Mask the password the base URL still carries when no key is set."""
+        executor = _build_executor(endpoint="http://admin:hunter2@localhost:4646")
+        assert "hunter2" in executor.base_url
+        assert "hunter2" not in executor.model_dump_json()
+        assert executor.model_dump(mode="json")["base_url"] == (
+            "http://admin:****@localhost:4646"
+        )
+
+    def test_the_preserve_context_dump_keeps_the_endpoint_password(self) -> None:
+        """Keep the real value for the config fingerprint, which compares it."""
+        executor = _build_executor(endpoint="http://admin:hunter2@localhost:4646")
+        dumped = executor.model_dump(mode="json", context=PRESERVE_CREDENTIALS_CONTEXT)
+        assert dumped["base_url"] == "http://admin:hunter2@localhost:4646"
+
+    def test_a_configured_key_leaves_no_userinfo_to_mask(self) -> None:
+        """Strip the userinfo entirely once a key supersedes it."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646", api_key="glsa_supersecret"
+        )
+        assert executor.model_dump(mode="json")["base_url"] == "http://localhost:4646"
+
+    def test_an_empty_key_still_masks_the_endpoint_password(self) -> None:
+        """Treat a blank key as unset for redaction as well as for the header."""
+        executor = _build_executor(
+            endpoint="http://admin:hunter2@localhost:4646", api_key=""
+        )
+        assert executor.model_dump(mode="json")["base_url"] == (
+            "http://admin:****@localhost:4646"
+        )
+
     @pytest.mark.parametrize(
         "scheme", ["", " ", "Bearer x\r\nX-Injected: yes", "Bea rer", "Bearer\x00"]
     )
@@ -1112,7 +1146,7 @@ class TestFailedStepReason:
         """Assert a failed log-capture hold does not become the reason.
 
         The hold is the one step ``NomadStep.is_persistable`` excludes, so a
-        failure of SEP's own capture machinery cannot be reported as the run's.
+        failure of PMM Extensions' own capture machinery cannot be reported as the run's.
         """
         alloc = {
             "TaskStates": {
@@ -1426,6 +1460,187 @@ class TestGetHosts:
 
         assert result == {"node-a": "10.0.0.1", "node-b": "10.0.0.2"}
         mock_backend.nodes.get_nodes.assert_called_once()
+        # A dropped clause or flipped operator here changes only the filter
+        # expression, which the fixture above never exercises - pin its structure
+        # directly rather than relying on the healthy-node fixtures to catch it.
+        assert mock_backend.nodes.get_nodes.call_args.kwargs["filter_"] == (
+            f"Status == {NODE_STATUS_READY} "
+            f"and {RAW_EXEC_DRIVER} in Drivers "
+            f"and Drivers.{RAW_EXEC_DRIVER}.Healthy == true"
+        )
+
+
+class TestGetHostStates:
+    """Test NomadExecutor.get_host_states.
+
+    The point of this method is telling apart the three ways a machine ends up
+    absent from ``get_hosts``. Each is asserted separately, because collapsing them
+    is the behaviour being replaced and it would pass a test that only checked "not
+    usable".
+    """
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_reports_every_node_not_only_the_usable_ones(self, mock_nomad_cls):
+        """Assert an unusable node is a row here rather than an omission."""
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "healthy",
+                "Address": "10.0.0.1",
+                "Status": "ready",
+                "Drivers": {"raw_exec": {"Healthy": True}},
+            },
+            {
+                "Name": "down",
+                "Address": "10.0.0.2",
+                "Status": "down",
+                "Drivers": {"raw_exec": {"Healthy": True}},
+            },
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert set(states) == {"healthy", "down"}
+        assert (states["healthy"].reachable, states["healthy"].driver_healthy) == (
+            True,
+            True,
+        )
+        assert (states["down"].reachable, states["down"].driver_healthy) == (
+            False,
+            True,
+        )
+        # No filter: this call must see what get_hosts filters out.
+        assert mock_backend.nodes.get_nodes.call_args.kwargs == {}
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_separates_unreachable_from_driver_unhealthy(self, mock_nomad_cls):
+        """Assert down and broken-driver are different answers, not one.
+
+        Never onboarded and onboarded-but-broken need different people to fix them,
+        so a single "unusable" flag sends the reader to the wrong place half the
+        time.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "down",
+                "Address": "10.0.0.1",
+                "Status": "down",
+                "Drivers": {
+                    "raw_exec": {"Healthy": True, "HealthDescription": "Healthy"}
+                },
+            },
+            {
+                "Name": "broken-driver",
+                "Address": "10.0.0.2",
+                "Status": "ready",
+                "Drivers": {
+                    "raw_exec": {
+                        "Healthy": False,
+                        "HealthDescription": "Failed to find raw_exec",
+                    }
+                },
+            },
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert (states["down"].reachable, states["down"].driver_healthy) == (
+            False,
+            True,
+        )
+        assert (
+            states["broken-driver"].reachable,
+            states["broken-driver"].driver_healthy,
+        ) == (True, False)
+        assert states["broken-driver"].detail == "Failed to find raw_exec"
+        # No StatusDescription in this fixture, so nothing to report; see
+        # test_unreachable_node_detail_comes_from_status_description for the case
+        # where Nomad does supply one.
+        assert states["down"].detail is None
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_a_missing_driver_entry_is_not_healthy(self, mock_nomad_cls):
+        """Assert an undetected driver reads as unhealthy rather than absent-so-fine.
+
+        Nomad omits drivers it has not detected, so the never-onboarded host has no
+        ``raw_exec`` key at all. Treating a missing key as anything but unhealthy
+        would report the emptiest case as the healthiest.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {"Name": "bare", "Address": "10.0.0.1", "Status": "ready", "Drivers": {}},
+            {"Name": "no-key", "Address": "10.0.0.2", "Status": "ready"},
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert states["bare"].driver_healthy is False
+        assert states["no-key"].driver_healthy is False
+        assert all(state.reachable for state in states.values())
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_unreachable_node_detail_comes_from_status_description(
+        self, mock_nomad_cls
+    ):
+        """Assert a down node explains itself instead of reporting nothing.
+
+        The driver fields are a stale pre-disconnect snapshot once the node itself
+        is unreachable, so ``detail`` has to come from the node's own status text,
+        not from a driver reading that predates the outage.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "down",
+                "Address": "10.0.0.1",
+                "Status": "down",
+                "StatusDescription": "Node heartbeat missed",
+                "Drivers": {
+                    "raw_exec": {"Healthy": True, "HealthDescription": "Healthy"}
+                },
+            }
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert states["down"].reachable is False
+        assert states["down"].detail == "Node heartbeat missed"
+
+    @patch("app.tasks.execution.executors.nomad.models.Nomad")
+    def test_malformed_healthy_value_is_not_healthy(self, mock_nomad_cls):
+        """Assert a non-boolean ``Healthy`` value cannot read as healthy.
+
+        ``bool()`` would turn any non-empty malformed value - including the string
+        ``"false"`` - into ``True``. The identity check guards against exactly this
+        regression, to ``bool(driver.get("Healthy"))``, which would otherwise keep
+        the whole suite green.
+        """
+        mock_backend = MagicMock()
+        mock_nomad_cls.return_value = mock_backend
+        mock_backend.nodes.get_nodes.return_value = [
+            {
+                "Name": "string-false",
+                "Address": "10.0.0.1",
+                "Status": "ready",
+                "Drivers": {"raw_exec": {"Healthy": "false"}},
+            },
+            {
+                "Name": "truthy-int",
+                "Address": "10.0.0.2",
+                "Status": "ready",
+                "Drivers": {"raw_exec": {"Healthy": 1}},
+            },
+        ]
+
+        states = {state.name: state for state in _build_executor().get_host_states()}
+
+        assert states["string-false"].driver_healthy is False
+        assert states["truthy-int"].driver_healthy is False
 
 
 class TestGetAllocationForTaskHistory:
@@ -4924,7 +5139,7 @@ class TestListFiles:
     @pytest.mark.asyncio
     @patch("app.tasks.execution.executors.nomad.models.Nomad")
     async def test_list_files_excludes_the_run_result_file(self, mock_nomad_cls):
-        """Assert SEP's own run-result file never reaches the output-files browser."""
+        """Assert PMM Extensions' own run-result file never reaches the output-files browser."""
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend
         mock_backend.allocation.get_allocation.return_value = {"ID": "alloc-1"}
@@ -5299,7 +5514,9 @@ class TestStreamFile:
             chunks = [
                 chunk
                 async for chunk in executor.stream_file(
-                    queue_item, "/output/.sep-run-result.json", anonymize=False
+                    queue_item,
+                    "/output/.pmm-extensions-run-result.json",
+                    anonymize=False,
                 )
             ]
 
@@ -7789,7 +8006,7 @@ class TestNomadCaptureHoldDispatchMeta:
         """Assert the executor setting is passed per dispatch, as a string.
 
         Enforcement lives on the execution host, so the value has to travel
-        with the dispatch rather than being read by the shell from SEP.
+        with the dispatch rather than being read by the shell from PMM Extensions.
         """
         mock_backend = MagicMock()
         mock_nomad_cls.return_value = mock_backend

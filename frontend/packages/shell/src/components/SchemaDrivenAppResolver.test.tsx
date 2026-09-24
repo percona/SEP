@@ -18,17 +18,17 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp } from '@pmm-extensions/api';
 
 const useEnabledApps = vi.hoisted(() => vi.fn());
-vi.mock('@sep/api', async (importActual) => {
-  const actual = await importActual<typeof import('@sep/api')>();
+vi.mock('@pmm-extensions/api', async (importActual) => {
+  const actual = await importActual<typeof import('@pmm-extensions/api')>();
   return { ...actual, useEnabledApps };
 });
 
 // Mock only `SchemaDrivenApp` (the sole framework import the resolver uses) so
-// the heavy `@sep/framework` package is never imported by this suite.
-vi.mock('@sep/framework', () => ({
+// the heavy `@pmm-extensions/framework` package is never imported by this suite.
+vi.mock('@pmm-extensions/framework', () => ({
   SchemaDrivenApp: ({ pluginName, routeBase }: { pluginName: string; routeBase?: string }) => (
     <div data-testid="schema-app" data-plugin={pluginName} data-routebase={routeBase} />
   ),

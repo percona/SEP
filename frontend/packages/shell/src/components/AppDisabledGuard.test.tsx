@@ -18,13 +18,13 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { EnabledApp } from '@sep/api';
+import type { EnabledApp } from '@pmm-extensions/api';
 
 // The guard reads the same `useEnabledApps` query that drives the sidebar.
 // Mock only that export so we can drive each lifecycle state deterministically.
 const useEnabledApps = vi.hoisted(() => vi.fn());
-vi.mock('@sep/api', async (importActual) => {
-  const actual = await importActual<typeof import('@sep/api')>();
+vi.mock('@pmm-extensions/api', async (importActual) => {
+  const actual = await importActual<typeof import('@pmm-extensions/api')>();
   return { ...actual, useEnabledApps };
 });
 

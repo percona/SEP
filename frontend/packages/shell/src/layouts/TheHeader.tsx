@@ -61,7 +61,7 @@ export default function TheHeader() {
           variant="body2"
           sx={{ ml: 1.5, opacity: 0.8, display: { xs: 'none', sm: 'inline' } }}
         >
-          Services Enablement Platform
+          PMM Extensions
         </Typography>
 
         <Box sx={{ flexGrow: 1 }} />

@@ -59,8 +59,8 @@ export default defineConfig({
     // `--port 5174 --strictPort` keeps the baseURL above stable and fails
     // fast if the port is taken (instead of silently picking another).
     command:
-      'VITE_MOCK_API=true pnpm --filter @sep/shell build && ' +
-      'pnpm --filter @sep/shell preview --port 5174 --strictPort',
+      'VITE_MOCK_API=true pnpm --filter @pmm-extensions/shell build && ' +
+      'pnpm --filter @pmm-extensions/shell preview --port 5174 --strictPort',
     url: 'http://localhost:5174',
     // In CI always start a fresh server; locally reuse one if already running.
     reuseExistingServer: !isCI,

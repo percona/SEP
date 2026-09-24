@@ -159,7 +159,7 @@ def test_the_script_knows_every_schema_step():
 
 @pytest.mark.parametrize(
     "named",
-    [("inventory",), ("sep", "tasks"), SCHEMA_STEPS],
+    [("inventory",), ("extensions", "tasks"), SCHEMA_STEPS],
     ids=["one", "some", "all"],
 )
 def test_a_named_step_loses_only_its_own_sentinel(
@@ -186,7 +186,7 @@ def test_a_named_step_loses_only_its_own_sentinel(
 
 @pytest.mark.parametrize(
     "unknown",
-    ["nosuchstep", "migrate-sep", "sep inventory", "", "../sep"],
+    ["nosuchstep", "migrate-extensions", "extensions inventory", "", "../extensions"],
     ids=["unknown", "program-name", "two-words", "empty", "path"],
 )
 def test_an_unknown_step_is_refused_before_anything_is_removed(
@@ -199,14 +199,14 @@ def test_an_unknown_step_is_refused_before_anything_is_removed(
     reporting unhealthy with no re-run coming to republish their markers.
     Validating every name first makes a typo free to retry.
 
-    ``migrate-sep`` is the natural mistake, since ``supervisorctl`` takes program
-    names, and ``sep inventory`` is what a substring membership test would
-    wrongly accept; ``""`` and ``../sep`` are refused before any path is built
+    ``migrate-extensions`` is the natural mistake, since ``supervisorctl`` takes program
+    names, and ``extensions inventory`` is what a substring membership test would
+    wrongly accept; ``""`` and ``../extensions`` are refused before any path is built
     from them.
     """
     publish_all(sentinel_prefix)
 
-    result = run(script, "sep", unknown)
+    result = run(script, "extensions", unknown)
 
     assert result.returncode == USAGE_EXIT_CODE
     assert all(sentinel(sentinel_prefix, step).exists() for step in SCHEMA_STEPS)
@@ -234,7 +234,7 @@ def test_clearing_an_absent_sentinel_succeeds(script: Path, sentinel_prefix: str
     """
     assert not any(sentinel(sentinel_prefix, step).exists() for step in SCHEMA_STEPS)
 
-    result = run(script, "sep")
+    result = run(script, "extensions")
 
     assert result.returncode == 0, result.stderr
 
@@ -243,14 +243,14 @@ def test_a_repeated_step_is_accepted(script: Path, sentinel_prefix: str):
     """Accept the same step twice, since the second removal has nothing left to do."""
     publish_all(sentinel_prefix)
 
-    result = run(script, "sep", "sep")
+    result = run(script, "extensions", "extensions")
 
     assert result.returncode == 0, result.stderr
-    assert not sentinel(sentinel_prefix, "sep").exists()
+    assert not sentinel(sentinel_prefix, "extensions").exists()
     assert all(
         sentinel(sentinel_prefix, step).exists()
         for step in SCHEMA_STEPS
-        if step != "sep"
+        if step != "extensions"
     )
 
 
@@ -281,13 +281,13 @@ def test_a_cleared_step_holds_a_restarted_gate(
     """
     publish_all(sentinel_prefix)
 
-    assert run(script, "sep").returncode == 0
+    assert run(script, "extensions").returncode == 0
 
     result = run(spent_gate(tmp_path, sentinel_prefix), *SCHEMA_STEPS)
     _, _, waiting_for = result.stderr.partition("waiting for: ")
 
     assert result.returncode != 0
-    assert waiting_for.split() == ["sep"]
+    assert waiting_for.split() == ["extensions"]
 
 
 def test_a_marker_that_cannot_be_removed_fails_the_run(
@@ -300,10 +300,10 @@ def test_a_marker_that_cannot_be_removed_fails_the_run(
     if it exits 0" is a real gate rather than a caution.
     """
     publish_all(sentinel_prefix)
-    sentinel(sentinel_prefix, "sep").unlink()
-    sentinel(sentinel_prefix, "sep").mkdir()
+    sentinel(sentinel_prefix, "extensions").unlink()
+    sentinel(sentinel_prefix, "extensions").mkdir()
 
-    result = run(script, "inventory", "sep", "tasks")
+    result = run(script, "inventory", "extensions", "tasks")
 
     assert result.returncode not in (0, USAGE_EXIT_CODE)
     assert not sentinel(sentinel_prefix, "inventory").exists()

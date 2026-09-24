@@ -36,7 +36,7 @@ from app.core.auth.utils import get_user_model
 from app.core.config import settings
 from app.core.log import set_log_context
 from app.core.security import is_bearer_authenticated, SAFE_HTTP_METHODS
-from app.sep.config import sep_settings
+from app.extensions.config import extensions_settings
 
 logger = logging.getLogger(__name__)
 #: The provider-selected concrete user class, resolved from configuration at
@@ -50,14 +50,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/oauth/token")
 AuthToken = Annotated[str, Depends(oauth2_scheme)]
 
 RefreshTokenCookie = Annotated[
-    str | None, Cookie(alias=sep_settings.SESSION_REFRESH.COOKIE_NAME)
+    str | None, Cookie(alias=extensions_settings.SESSION_REFRESH.COOKIE_NAME)
 ]
 
 SERVICE_PRINCIPAL_ID = UUID("00000000-0000-4000-8000-000000000000")
 SERVICE_PRINCIPAL = User.build_service_principal(
     user_id=SERVICE_PRINCIPAL_ID,
-    username="sep-service",
-    first_name="SEP",
+    username="extensions-service",
+    first_name="PMM Extensions",
     last_name="Service",
     role=UserRole.VIEWER,
 )
@@ -70,10 +70,8 @@ def _build_service_principal(secret: str) -> BaseUser:
     Pydantic v2's ``model_copy(update=...)`` silently drops non-field keys, so
     the value must be assigned via the property setter after the copy.
 
-    :param secret: The unwrapped ``SEP_INTERNAL_TOKEN`` value.
-    :type secret: str
+    :param secret: The unwrapped ``EXTENSIONS_INTERNAL_TOKEN`` value.
     :return: A fresh copy of the singleton with ``access_token`` populated.
-    :rtype: User
     """
     user = SERVICE_PRINCIPAL.model_copy()
     user.access_token = secret
@@ -83,10 +81,10 @@ def _build_service_principal(secret: str) -> BaseUser:
 async def authenticate_bearer_token(token: str) -> BaseUser:
     """Return the authenticated user from an OAuth2 token.
 
-    When ``settings.SEP_INTERNAL_TOKEN`` is configured and the incoming Bearer
+    When ``settings.EXTENSIONS_INTERNAL_TOKEN`` is configured and the incoming Bearer
     token matches it (constant-time comparison), return a synthetic non-admin
     "service principal" user instead of contacting the OAuth provider. This
-    allows SEP-internal service-to-service calls (e.g. scheduled inventory
+    allows PMM Extensions internal service-to-service calls (e.g. scheduled inventory
     sync) to authenticate with a stable deployment-level secret rather than a
     short-lived personal access token.
 
@@ -103,7 +101,7 @@ async def authenticate_bearer_token(token: str) -> BaseUser:
     :raises BaseAuthProviderException: If the auth provider errors while
         validating the credential.
     """
-    if (token_setting := settings.SEP_INTERNAL_TOKEN) is not None:
+    if (token_setting := settings.EXTENSIONS_INTERNAL_TOKEN) is not None:
         secret = token_setting.get_secret_value()
         if secret and secrets.compare_digest(token, secret):
             set_log_context(user=SERVICE_PRINCIPAL.username)
@@ -184,7 +182,7 @@ async def get_current_service_principal(current_user: CurrentUser) -> BaseUser:
     """Return the authenticated caller only when it is the service principal.
 
     Gates writes whose rows a syncer owns: those writes authenticate with
-    ``SEP_INTERNAL_TOKEN``, so a human credential is refused on identity rather
+    ``EXTENSIONS_INTERNAL_TOKEN``, so a human credential is refused on identity rather
     than ranked. Composing this with :func:`get_current_admin` would refuse the
     principal too, which holds ``UserRole.VIEWER``.
 
@@ -237,7 +235,7 @@ def minimum_role_for(route: object | None) -> UserRole:
     """Return the minimum role a matched route requires.
 
     The single home of the unregistered-route default, read by the gate and by
-    the test that classifies SEP's unsafe surface, so the two cannot disagree
+    the test that classifies PMM Extensions' unsafe surface, so the two cannot disagree
     about what an unregistered route resolves to. A request no route matched
     carries no ``route`` in its scope and resolves the same way.
 
@@ -272,7 +270,7 @@ async def require_minimum_role_for_unsafe_methods(request: Request) -> None:
     passed along so the route's own authentication dependency is served from this
     resolution rather than repeating it.
 
-    ``SEP_INTERNAL_TOKEN``'s service principal is admitted by identity so
+    ``EXTENSIONS_INTERNAL_TOKEN``'s service principal is admitted by identity so
     scheduled inventory sync and scheduled execution keep working. It holds
     ``UserRole.VIEWER`` and so would fail every minimum above it; the bypass
     stays scoped to this gate, leaving every pre-existing ``IsApiAdmin`` /

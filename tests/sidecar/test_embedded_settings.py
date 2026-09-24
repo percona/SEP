@@ -28,26 +28,26 @@ from app.core.auth.config import AuthSettings
 from app.core.config import Settings
 from app.core.requests import RemoteAPI
 from app.core.utils import import_var
-from app.inventory.config import InventorySettings
-from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
-from app.sep.api.routes.settings import SEP_ADMIN_SETTINGS_CLASSES
-from app.sep.apps.framework.registry import (
+from app.extensions.api.routes.settings import EXTENSIONS_ADMIN_SETTINGS_CLASSES
+from app.extensions.apps.framework.registry import (
     build_app_registry,
     collect_app_owned_settings_classes,
 )
-from app.sep.bundle_upload.plan import (
+from app.extensions.bundle_upload.plan import (
     ConnectionDetail,
     DeliveryPlanExecutor,
     SecretValue,
 )
-from app.sep.config import SEPSettings, SyncOptions
-from app.sep.routes.artifacts import collect_base_dirs
-from app.sep.snippets.constants import ARTIFACT_TYPE_SNIPPET
-from app.sep.sync.syncers.pmm import PMMSyncer
-from app.sep.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.extensions.config import ExtensionsSettings, SyncOptions
+from app.extensions.routes.artifacts import collect_base_dirs
+from app.extensions.snippets.constants import ARTIFACT_TYPE_SNIPPET
+from app.extensions.sync.syncers.pmm import PMMSyncer
+from app.extensions.sync.syncers.system_facts.syncer import SystemFactsSyncer
+from app.inventory.config import InventorySettings
+from app.inventory.settings.routes import INVENTORY_ADMIN_SETTINGS_CLASSES
 from app.tasks.config import TasksSettings
 from app.tasks.settings.routes import TASKS_ADMIN_SETTINGS_CLASSES
-from tests.app.sep.conftest import REDUCED_ACTIVATION
+from tests.app.extensions.conftest import REDUCED_ACTIVATION
 from tests.sidecar.conftest import (
     EMBEDDED_PROFILE,
     read_allowlist,
@@ -63,8 +63,8 @@ legitimate, so an ``@``-rejecting pattern would be broader than the invariant
 this file enforces.
 """
 
-PMM_URL_PREFIX = "/sep"
-"""The mount prefix PMM hardcodes in the ``location`` block it ships for SEP.
+PMM_URL_PREFIX = "/extensions"
+"""The mount prefix PMM hardcodes in the ``location`` block it ships for PMM Extensions.
 
 Fixed topology rather than a per-deployment input, so the profile and the
 healthcheck are both held against this one literal.
@@ -81,8 +81,8 @@ fields (``sn_api_key``, ``client_token``), which :data:`SECRET_KEYS` would walk
 past, so the block is matched by its container instead.
 """
 
-SHARED_DATABASE_NAME = "sep"
-"""The one database PMM's ``PMM_ENABLE_SEP`` provisions for all three services."""
+SHARED_DATABASE_NAME = "pmm_extensions"
+"""The one database PMM's ``PMM_ENABLE_EXTENSIONS`` provisions for all three services."""
 
 EMBEDDED_WORKER_CONCURRENCY = 4
 """Prefork children the baked profile pins the side-car's Celery worker to.
@@ -94,8 +94,12 @@ ceilings by this, so an unpinned worker (one child per host CPU) would void it.
 EMBEDDED_POOL_SIZING = {"POOL_SIZE": 3, "MAX_OVERFLOW": 2, "POOL_TIMEOUT": 10.0}
 """The pool keys the profile writes into its shared database block."""
 
-ALLOWLIST_SIZE = 24
+ALLOWLIST_SIZE = 25
 """How many entries the embedded override allowlist ships.
+
+``sidecar/settings.yaml``'s ``ALLOWED_KEYS`` is the list itself. A field missing
+from it is not hot-reloadable through the profile, whether the caller is a UI
+request or pmm-managed's own settings sync.
 
 Pinned so a silently truncated list -- which the policy suite's negative
 assertions would still accept -- fails here instead.
@@ -244,7 +248,7 @@ def resolved_profile() -> dict[str, dict[str, Any]]:
     """
     return {
         "global": Settings().model_dump(exclude=UNCOMPARABLE_FIELDS),
-        "sep": SEPSettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
+        "extensions": ExtensionsSettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
         "inventory": InventorySettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
         "tasks": TasksSettings().model_dump(exclude=UNCOMPARABLE_FIELDS),
     }
@@ -255,8 +259,8 @@ def test_profile_constructs_every_settings_class():
     """Assert every settings class the side-car builds resolves from the profile."""
     assert Settings().CELERY.broker_url
     assert AuthSettings().PROVIDER
-    assert SEPSettings().DATABASE.NAME == SHARED_DATABASE_NAME
-    assert SEPSettings().DIAGNOSTICS_DELIVERY is not None
+    assert ExtensionsSettings().DATABASE.NAME == SHARED_DATABASE_NAME
+    assert ExtensionsSettings().DIAGNOSTICS_DELIVERY is not None
     assert InventorySettings().DATABASE.NAME == SHARED_DATABASE_NAME
     assert TasksSettings().NOMAD.endpoint
 
@@ -334,12 +338,12 @@ def test_connectivity_check_defaults_to_unchecked():
     the resolved value is the declared field default -- which a repository
     checkout masks, because its own ``settings.yaml`` supplies one.
     """
-    assert SEPSettings().CONNECTIVITY_CHECK_DEFAULT is False
+    assert ExtensionsSettings().CONNECTIVITY_CHECK_DEFAULT is False
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_grafana_provider_constructs_with_an_empty_token():
-    """Assert the provider constructs, inert, until ``SEP_GRAFANA_TOKEN`` arrives."""
+    """Assert the provider constructs, inert, until ``EXTENSIONS_GRAFANA_TOKEN`` arrives."""
     provider = AuthSettings().PROVIDER["grafana"]
 
     assert provider.service_account_token.get_secret_value() == ""
@@ -363,17 +367,17 @@ def test_profile_database_block_is_defined_once(embedded_profile_data: dict):
     """Assert the shared database is anchored once and aliased to every service."""
     default = embedded_profile_data["default"]
     shared = default["DATABASE"]
-    assert default["SEP"]["DATABASE"] is shared
+    assert default["EXTENSIONS"]["DATABASE"] is shared
     assert default["INVENTORY"]["DATABASE"] is shared
     assert default["TASKS"]["DATABASE"] is shared
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_all_services_resolve_the_same_database_connection():
-    """Assert SEP, Inventory, and Tasks read identical connection values from the profile."""
+    """Assert Extensions, Inventory, and Tasks read identical connection values from the profile."""
     databases = [
         settings_cls().DATABASE
-        for settings_cls in (SEPSettings, InventorySettings, TasksSettings)
+        for settings_cls in (ExtensionsSettings, InventorySettings, TasksSettings)
     ]
     reference = databases[0]
     for database in databases[1:]:
@@ -386,9 +390,9 @@ def test_all_services_resolve_the_same_database_connection():
         )
     assert (reference.HOST, reference.NAME, reference.PORT, reference.USER) == (
         "pmm-server",
-        "sep",
+        SHARED_DATABASE_NAME,
         5432,
-        "sep",
+        SHARED_DATABASE_NAME,
     )
 
 
@@ -403,7 +407,7 @@ def test_every_service_resolves_the_same_pool_sizing():
     """
     expected = {key.lower(): value for key, value in EMBEDDED_POOL_SIZING.items()}
 
-    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+    for settings_cls in (ExtensionsSettings, InventorySettings, TasksSettings):
         database = settings_cls().DATABASE
         resolved = {
             "POOL_SIZE": database.POOL_SIZE,
@@ -421,7 +425,7 @@ def test_global_database_password_reaches_every_service(embedded_profile_cwd: Pa
     secrets_dir.mkdir()
     (secrets_dir / "DATABASE__PASSWORD").write_text("shared-pw", encoding="utf-8")
 
-    for settings_cls in (SEPSettings, InventorySettings, TasksSettings):
+    for settings_cls in (ExtensionsSettings, InventorySettings, TasksSettings):
         assert (
             settings_cls(_secrets_dir=secrets_dir).DATABASE.PASSWORD.get_secret_value()
             == "shared-pw"
@@ -443,7 +447,7 @@ def test_no_url_carries_a_password():
 
 
 def test_the_profile_configures_no_beat_store():
-    """Leave ``BEAT_DBURI`` unset, so the beat store follows the SEP database.
+    """Leave ``BEAT_DBURI`` unset, so the beat store follows the PMM Extensions database.
 
     A profile value is a configured value and would outrank the derived default,
     handing celery-beat a password-less URI. The assertion reads the uncommented
@@ -476,12 +480,16 @@ def test_database_password_merges_into_the_profile_block(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Assert an environment password lands without displacing its YAML siblings."""
-    monkeypatch.setenv("SEP__DATABASE__PASSWORD", "pw")
+    monkeypatch.setenv("EXTENSIONS__DATABASE__PASSWORD", "pw")
 
-    database = SEPSettings().DATABASE
+    database = ExtensionsSettings().DATABASE
 
     assert database.PASSWORD.get_secret_value() == "pw"
-    assert (database.HOST, database.NAME, database.USER) == ("pmm-server", "sep", "sep")
+    assert (database.HOST, database.NAME, database.USER) == (
+        "pmm-server",
+        SHARED_DATABASE_NAME,
+        SHARED_DATABASE_NAME,
+    )
 
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
@@ -500,7 +508,7 @@ def test_grafana_token_merges_into_the_profile_block(monkeypatch: pytest.MonkeyP
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_activation_list_builds_an_app_registry():
     """Assert the baked activation list satisfies every declared app dependency."""
-    activated = set(build_app_registry(SEPSettings().APPS).keys())
+    activated = set(build_app_registry(ExtensionsSettings().APPS).keys())
 
     assert {"inventory", "atw", "mysql_backups"} <= activated
     assert "snippets" not in activated
@@ -513,7 +521,7 @@ def test_inventory_activates_without_a_sidebar_entry():
     PMM owns the embedded inventory UI, so inventory is activated for its
     operator API while ``GET /api/apps/`` advertises no page for it.
     """
-    registry = build_app_registry(SEPSettings().APPS)
+    registry = build_app_registry(ExtensionsSettings().APPS)
 
     assert registry.get("inventory").sidebar is False
 
@@ -528,7 +536,8 @@ def test_profile_declares_the_system_facts_syncer(
     schedule below included.
     """
     declared = [
-        entry["SYNCER"] for entry in embedded_profile_data["default"]["SEP"]["SYNCERS"]
+        entry["SYNCER"]
+        for entry in embedded_profile_data["default"]["EXTENSIONS"]["SYNCERS"]
     ]
 
     assert declared == ["PMMSyncer", "MySQLSyncer", "SystemFactsSyncer"]
@@ -552,7 +561,7 @@ def test_profile_schedules_the_system_facts_syncer_daily():
 def test_the_short_syncer_name_resolves_to_the_collector():
     """Assert the profile's short syncer name resolves to the collector class.
 
-    ``SyncOptions`` resolves a bare syncer name against ``app.sep.sync.syncers``
+    ``SyncOptions`` resolves a bare syncer name against ``app.extensions.sync.syncers``
     and ``get_syncers`` imports it from there, so this is what makes the entry
     reachable through a settings override as well as through the baked profile.
     """
@@ -569,8 +578,10 @@ def test_activation_list_resolves_the_snippet_artifact_type(mocker):
     come from the static map rather than the registry; without it the signed URL
     ATW emits is rejected as an invalid artifact type.
     """
-    registry = build_app_registry(SEPSettings().APPS)
-    mocker.patch("app.sep.routes.artifacts.get_app_registry", return_value=registry)
+    registry = build_app_registry(ExtensionsSettings().APPS)
+    mocker.patch(
+        "app.extensions.routes.artifacts.get_app_registry", return_value=registry
+    )
 
     assert ARTIFACT_TYPE_SNIPPET in collect_base_dirs()
 
@@ -579,14 +590,14 @@ def test_activation_list_resolves_the_snippet_artifact_type(mocker):
 def test_reduced_activation_mirrors_the_baked_profile():
     """Pin the shared activation constant to the profile it claims to mirror.
 
-    ``REDUCED_ACTIVATION`` stands in for this profile everywhere in the SEP
+    ``REDUCED_ACTIVATION`` stands in for this profile everywhere in the PMM Extensions
     subtree, so a divergence makes those tests assert against a deployment that
     does not exist — which is how an activation-gated artifact-download failure
     stayed invisible to the whole suite while carrying a ``snippets`` entry the
     profile never had.
     """
     assert [app.module_name for app in REDUCED_ACTIVATION] == [
-        app.module_name for app in SEPSettings().APPS
+        app.module_name for app in ExtensionsSettings().APPS
     ]
 
 
@@ -598,7 +609,7 @@ def test_uvicorn_ports_match_the_healthcheck_probe():
 
     assert probed is not None
     assert [int(port) for port in probed.group(1).split(",")] == [
-        SEPSettings().UVICORN_PORT,
+        ExtensionsSettings().UVICORN_PORT,
         InventorySettings().UVICORN_PORT,
         TasksSettings().UVICORN_PORT,
     ]
@@ -606,8 +617,8 @@ def test_uvicorn_ports_match_the_healthcheck_probe():
 
 @pytest.mark.usefixtures("embedded_profile_cwd")
 def test_profile_serves_under_the_prefix_pmm_proxies():
-    """Assert the profile mounts SEP where PMM's nginx drop-in forwards to it."""
-    assert SEPSettings().ROOT_PATH == PMM_URL_PREFIX
+    """Assert the profile mounts PMM Extensions where PMM's nginx drop-in forwards to it."""
+    assert ExtensionsSettings().ROOT_PATH == PMM_URL_PREFIX
 
 
 def test_healthcheck_probes_the_prefix_free_path():
@@ -630,9 +641,9 @@ def test_healthcheck_probes_the_prefix_free_path():
 def test_database_host_and_port_match_the_expansion_defaults():
     """Assert the profile and the expansion state one truth about the server."""
     helper = SETTINGS_ENV_HELPER.read_text(encoding="utf-8")
-    database = SEPSettings().DATABASE
-    host = re.search(r"SEP_DB_HOST:-([^}\"]+)", helper)
-    port = re.search(r"SEP_DB_PORT:-([^}\"]+)", helper)
+    database = ExtensionsSettings().DATABASE
+    host = re.search(r"EXTENSIONS_DB_HOST:-([^}\"]+)", helper)
+    port = re.search(r"EXTENSIONS_DB_PORT:-([^}\"]+)", helper)
 
     assert host is not None
     assert port is not None
@@ -667,20 +678,20 @@ def test_profile_resolves_identically_outside_production_docker(
 def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: dict):
     """Assert every allowlist class token is reachable across all three services.
 
-    The reachable set is the union of the SEP, Inventory and Tasks wired classes
+    The reachable set is the union of the Extensions, Inventory and Tasks wired classes
     plus the app-owned classes activated by the profile's own activation list.
 
     :param embedded_profile_data: The parsed baked profile.
     """
     reachable_tokens: set[str] = set()
-    for member, _, _ in SEP_ADMIN_SETTINGS_CLASSES:
+    for member, _, _ in EXTENSIONS_ADMIN_SETTINGS_CLASSES:
         reachable_tokens.add(str(member))
     for member, _, _ in INVENTORY_ADMIN_SETTINGS_CLASSES:
         reachable_tokens.add(str(member))
     for member, _, _ in TASKS_ADMIN_SETTINGS_CLASSES:
         reachable_tokens.add(str(member))
 
-    profile_apps = SEPSettings().APPS
+    profile_apps = ExtensionsSettings().APPS
     for entry in collect_app_owned_settings_classes(profile_apps):
         reachable_tokens.add(str(entry.setting_class))
 
@@ -697,7 +708,7 @@ def test_every_allowlist_entry_names_a_reachable_class(embedded_profile_data: di
 class TestBakedDeliveryProbeAndConnectionDetails:
     """Cover the two read-only steps the baked delivery plan declares.
 
-    Every assertion observes the plan ``SEPSettings()`` returns rather than the
+    Every assertion observes the plan ``ExtensionsSettings()`` returns rather than the
     profile's text: ``DeliveryPlan`` ignores keys it does not declare, so a
     misspelled block name is dropped in silence and a file-content check would
     pass on a plan carrying neither step.
@@ -705,28 +716,28 @@ class TestBakedDeliveryProbeAndConnectionDetails:
 
     def test_the_baked_plan_declares_a_probe(self):
         """Assert the connectivity check has a request to issue."""
-        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        plan = ExtensionsSettings().DIAGNOSTICS_DELIVERY
 
         assert plan.probe is not None
         assert plan.probe.path == "api/now/table/sn_customerservice_case"
 
     def test_the_baked_probe_requests_one_identifier(self):
         """Assert the probe reads one row's identifier and nothing else."""
-        probe = SEPSettings().DIAGNOSTICS_DELIVERY.probe
+        probe = ExtensionsSettings().DIAGNOSTICS_DELIVERY.probe
 
         assert probe.query["sysparm_limit"].value == "1"
         assert probe.query["sysparm_fields"].value == "sys_id"
 
     def test_the_baked_plan_declares_connection_details(self):
         """Assert the connected-state panel has a request to issue."""
-        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        plan = ExtensionsSettings().DIAGNOSTICS_DELIVERY
 
         assert plan.connection_details is not None
         assert plan.connection_details.path == "api/now/table/api_key"
 
     def test_the_baked_connection_details_declares_every_label(self):
         """Assert the panel's rows are declared, in the order they render."""
-        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+        step = ExtensionsSettings().DIAGNOSTICS_DELIVERY.connection_details
 
         assert list(step.details) == BAKED_CONNECTION_DETAIL_LABELS
 
@@ -736,7 +747,7 @@ class TestBakedDeliveryProbeAndConnectionDetails:
         A projected field no pointer addresses is read for nothing; a pointer
         addressing an unprojected field drops its own row in silence.
         """
-        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+        step = ExtensionsSettings().DIAGNOSTICS_DELIVERY.connection_details
 
         projected = step.query["sysparm_fields"].value.split(",")
         addressed = [projected_field(pointer) for pointer in step.details.values()]
@@ -750,7 +761,7 @@ class TestBakedDeliveryProbeAndConnectionDetails:
         it is the only place the key material can be kept out: a field selected
         here travels back over the wire whatever the pointers later discard.
         """
-        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+        step = ExtensionsSettings().DIAGNOSTICS_DELIVERY.connection_details
 
         projected = step.query["sysparm_fields"].value.split(",")
 
@@ -760,20 +771,20 @@ class TestBakedDeliveryProbeAndConnectionDetails:
 
     def test_the_baked_connection_details_scopes_to_the_calling_identity(self):
         """Assert the read is narrowed to the rows this identity owns."""
-        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+        step = ExtensionsSettings().DIAGNOSTICS_DELIVERY.connection_details
 
         assert step.query["sysparm_query"].value == IDENTITY_SCOPED_QUERY
 
     def test_the_baked_connection_details_requests_display_values(self):
         """Assert reference fields arrive resolved rather than as opaque ids."""
-        step = SEPSettings().DIAGNOSTICS_DELIVERY.connection_details
+        step = ExtensionsSettings().DIAGNOSTICS_DELIVERY.connection_details
 
         assert step.query["sysparm_display_value"].value == "all"
         assert step.query["sysparm_limit"].value == "1"
 
     def test_the_baked_probe_and_details_use_the_declared_secret(self):
         """Assert both steps cite a credential the plan declares."""
-        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        plan = ExtensionsSettings().DIAGNOSTICS_DELIVERY
         headers = [
             plan.probe.headers["x-sn-apikey"],
             plan.connection_details.headers["x-sn-apikey"],
@@ -791,7 +802,7 @@ class TestBakedDeliveryProbeAndConnectionDetails:
         pairs, which is the same blank panel an undeclared step leaves, so
         declaring the block is not on its own evidence that it reports anything.
         """
-        plan = SEPSettings().DIAGNOSTICS_DELIVERY
+        plan = ExtensionsSettings().DIAGNOSTICS_DELIVERY
         api = RemoteAPI(endpoint=str(plan.endpoint))
         executor = DeliveryPlanExecutor(plan, api)
 

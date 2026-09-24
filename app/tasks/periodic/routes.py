@@ -69,7 +69,7 @@ async def list_periodic_tasks(
         ``owner`` filter and to stamp each row's last-run status.
     :param pagination: Validated offset/limit window for this page.
     :param owner: Optional owner whose active tasks scope the page; omit to
-        page every SEP-managed schedule.
+        page every PMM Extensions managed schedule.
     :param enabled: Optional enabled-state filter.
     :return: A page of beat-store schedules, each carrying ``last_run_status``.
     """
@@ -104,7 +104,7 @@ async def preview_schedule(preview: SchedulePreviewWrite) -> SchedulePreviewResp
     expression while it is still being typed.
 
     Two path segments so no single-segment ``/{param}`` sibling can match it,
-    which is what keeps the SEP-side twin from reserving a task name.
+    which is what keeps the PMM Extensions side twin from reserving a task name.
 
     :param preview: The schedule to preview. Persisted nowhere.
     :return: The schedule's zone and its upcoming runs.

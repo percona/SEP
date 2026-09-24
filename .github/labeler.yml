@@ -13,9 +13,9 @@ frontend:
       - 'frontend/**'
       - 'package.json'
 
-# svc:* labels track the mounted services, which share a name with SEP apps but
+# svc:* labels track the mounted services, which share a name with PMM Extensions apps but
 # are different code. The prefix keeps app/tasks/ (the service) distinct from
-# app/sep/apps/tasks/ (the SEP app); same for inventory.
+# app/extensions/apps/tasks/ (the PMM Extensions app); same for inventory.
 svc:tasks:
 - any:
   - changed-files:
@@ -34,118 +34,124 @@ app:alert_troubleshooting:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/alert_troubleshooting/**'
+      - 'app/extensions/apps/alert_troubleshooting/**'
       - 'frontend/packages/apps/alert_troubleshooting/**'
-      - 'tests/app/sep/apps/alert_troubleshooting/**'
+      - 'tests/app/extensions/apps/alert_troubleshooting/**'
       - 'frontend/packages/e2e/tests/alert-troubleshooting*.spec.ts'
 app:alerts:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/alerts/**'
+      - 'app/extensions/apps/alerts/**'
       - 'frontend/packages/apps/alerts/**'
-      - 'tests/app/sep/apps/alerts/**'
+      - 'tests/app/extensions/apps/alerts/**'
       - 'frontend/packages/e2e/tests/alerts*.spec.ts'
 app:alters:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/alters/**'
+      - 'app/extensions/apps/alters/**'
       - 'frontend/packages/apps/alters/**'
-      - 'tests/app/sep/apps/alters/**'
+      - 'tests/app/extensions/apps/alters/**'
       - 'frontend/packages/e2e/tests/alters*.spec.ts'
 app:archives:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/archives/**'
-      - 'tests/app/sep/apps/archives/**'
+      - 'app/extensions/apps/archives/**'
+      - 'tests/app/extensions/apps/archives/**'
       - 'frontend/packages/e2e/tests/archives*.spec.ts'
 app:atw:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/atw/**'
+      - 'app/extensions/apps/atw/**'
       - 'frontend/packages/apps/atw/**'
-      - 'tests/app/sep/apps/atw/**'
+      - 'tests/app/extensions/apps/atw/**'
       - 'frontend/packages/e2e/tests/atw*.spec.ts'
 app:backup_mongo:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/backup_mongo/**'
+      - 'app/extensions/apps/backup_mongo/**'
       - 'frontend/packages/apps/backup_mongo/**'
-      - 'tests/app/sep/apps/backup_mongo/**'
+      - 'tests/app/extensions/apps/backup_mongo/**'
       - 'frontend/packages/e2e/tests/backup_mongo*.spec.ts'
 app:backup_pg:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/backup_pg/**'
-      - 'tests/app/sep/apps/backup_pg/**'
+      - 'app/extensions/apps/backup_pg/**'
+      - 'tests/app/extensions/apps/backup_pg/**'
       - 'frontend/packages/e2e/tests/backup_pg*.spec.ts'
 app:checksums:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/checksums/**'
-      - 'tests/app/sep/apps/checksums/**'
+      - 'app/extensions/apps/checksums/**'
+      - 'tests/app/extensions/apps/checksums/**'
 app:dipper:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/dipper/**'
+      - 'app/extensions/apps/dipper/**'
       - 'frontend/packages/apps/dipper/**'
-      - 'tests/app/sep/apps/dipper/**'
+      - 'tests/app/extensions/apps/dipper/**'
 app:inventory:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/inventory/**'
+      - 'app/extensions/apps/inventory/**'
       - 'frontend/packages/apps/inventory/**'
-      - 'tests/app/sep/apps/inventory/**'
+      - 'tests/app/extensions/apps/inventory/**'
 app:mysql_backups:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/mysql_backups/**'
-      - 'tests/app/sep/apps/mysql_backups/**'
+      - 'app/extensions/apps/mysql_backups/**'
+      - 'tests/app/extensions/apps/mysql_backups/**'
       - 'frontend/packages/e2e/tests/mysql-backups*.spec.ts'
+app:om_bootstrap:
+- any:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'app/extensions/apps/om_bootstrap/**'
+      - 'tests/app/extensions/apps/om_bootstrap/**'
 app:om_inventory:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/om_inventory/**'
-      - 'tests/app/sep/apps/om_inventory/**'
+      - 'app/extensions/apps/om_inventory/**'
+      - 'tests/app/extensions/apps/om_inventory/**'
 app:report:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/report/**'
+      - 'app/extensions/apps/report/**'
       - 'frontend/packages/apps/report/**'
-      - 'tests/app/sep/apps/report/**'
+      - 'tests/app/extensions/apps/report/**'
       - 'frontend/packages/e2e/tests/report*.spec.ts'
 app:snippets:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/snippets/**'
+      - 'app/extensions/apps/snippets/**'
       - 'frontend/packages/apps/snippets/**'
-      - 'tests/app/sep/apps/snippets/**'
+      - 'tests/app/extensions/apps/snippets/**'
       - 'frontend/packages/e2e/tests/snippets*.spec.ts'
 app:tasks:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/tasks/**'
+      - 'app/extensions/apps/tasks/**'
       - 'frontend/packages/apps/tasks/**'
-      - 'tests/app/sep/apps/tasks/**'
+      - 'tests/app/extensions/apps/tasks/**'
       - 'frontend/packages/e2e/tests/tasks*.spec.ts'
 app:topology:
 - any:
   - changed-files:
     - any-glob-to-any-file:
-      - 'app/sep/apps/topology/**'
+      - 'app/extensions/apps/topology/**'
       - 'frontend/packages/apps/topology/**'
-      - 'tests/app/sep/apps/topology/**'
+      - 'tests/app/extensions/apps/topology/**'
 # END generated app labels

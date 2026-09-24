@@ -152,8 +152,8 @@ class SettingClassGroup(BaseModel):
     :param setting_class: The Pydantic class ``__name__`` this group represents.
     :param settings: The fields declared on the settings class, with their
         current values and metadata.
-    :param is_app_owned: Whether this group belongs to a SEP app under
-        ``app/sep/apps/`` rather than core SEP wiring.
+    :param is_app_owned: Whether this group belongs to a PMM Extensions app under
+        ``app/extensions/apps/`` rather than core PMM Extensions wiring.
     :param app_id: The owning app's registry key when ``is_app_owned`` is
         ``True``; ``None`` for core groups.
     :param app_display_name: The owning app's human-facing label when

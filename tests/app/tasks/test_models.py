@@ -30,12 +30,12 @@ from pydantic import ValidationError
 from app.core.alerts.models import AlertService, AlertSeverity
 from app.core.encryption import decrypt, is_encrypted
 from app.core.utils.path import PayloadReferenceError
-from app.sep.apps.archives.alerts import (
+from app.extensions.apps.archives.alerts import (
     ALERT_DETAIL_BUILDER,
     ARCHIVER_TRACE_PLACEHOLDER,
 )
-from app.sep.apps.framework.spec import build_run_python_task
-from app.sep.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
+from app.extensions.apps.framework.spec import build_run_python_task
+from app.extensions.apps.mysql_backups.recorder import RUN_RESULT_RECORDER
 from app.tasks.anonymizer.entities import PIIEntity
 from app.tasks.crud import TaskManager
 from app.tasks.execution_request_secrets import (
@@ -399,7 +399,7 @@ class TestTaskWriteHookPathValidation:
     @pytest.mark.parametrize("path", REJECTED_HOOK_PATHS)
     def test_rejects_path_outside_allow_list(self, field: str, path: str) -> None:
         """Assert a hook path the allow-list denies is rejected at the write boundary."""
-        with pytest.raises(ValidationError, match="app.sep.apps"):
+        with pytest.raises(ValidationError, match="app.extensions.apps"):
             self._write(**{field: path})
 
     @pytest.mark.parametrize("field", HOOK_PATH_FIELDS)
@@ -428,7 +428,7 @@ class TestTaskWriteHookPathValidation:
 
         A row whose hook path predates the allow-list must still serialise.
         """
-        legacy_path = "app.sep.plugins.archives.alerts:build"
+        legacy_path = "app.extensions.plugins.archives.alerts:build"
 
         instance = factory.build(alert_detail_builder=legacy_path)
 
@@ -1054,7 +1054,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.apps.archives.alerts._read_last_stderr",
+            "app.extensions.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="2026 ERROR: pt-archiver Purge Failed"),
         )
         mock_trigger = AsyncMock()
@@ -1088,7 +1088,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.apps.archives.alerts._read_last_stderr",
+            "app.extensions.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()
@@ -1111,7 +1111,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.apps.archives.alerts._read_last_stderr",
+            "app.extensions.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value=None),
         )
         mock_trigger = AsyncMock()
@@ -1126,7 +1126,7 @@ class TestTaskHistory:
     ) -> None:
         """Give non-archiver failures no custom_details and keep the target summary."""
         read_spy = mocker.patch(
-            "app.sep.apps.archives.alerts._read_last_stderr",
+            "app.extensions.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
@@ -1150,7 +1150,7 @@ class TestTaskHistory:
     ) -> None:
         """Leave Archiver LOST unchanged: no custom_details, no source-node summary."""
         read_spy = mocker.patch(
-            "app.sep.apps.archives.alerts._read_last_stderr",
+            "app.extensions.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="x"),
         )
         history = TaskHistory(
@@ -1211,7 +1211,7 @@ class TestTaskHistory:
             status=TaskHistoryStatusEnum.FAILED,
         )
         mocker.patch(
-            "app.sep.apps.archives.alerts._read_last_stderr",
+            "app.extensions.apps.archives.alerts._read_last_stderr",
             new=AsyncMock(return_value="ERROR: boom"),
         )
         mock_trigger = AsyncMock()
@@ -1473,7 +1473,7 @@ class TestTaskHistoryResponseDisplayName:
             task="run-python",
             target="db-2",
             meta={"_snippet_filename": "payload.py"},
-            payload="file://app/sep/sync/syncers/system_facts/payload.py",
+            payload="file://app/extensions/sync/syncers/system_facts/payload.py",
         )
         assert (
             self._history(run_python_task, req).display_name

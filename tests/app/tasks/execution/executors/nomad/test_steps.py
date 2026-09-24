@@ -104,7 +104,7 @@ def test_anonymized_steps_remain_run_script_and_step1() -> None:
 
 
 def test_is_persistable_excludes_only_the_log_capture_hold_step() -> None:
-    """Assert the hold step is the sole member SEP neither drains nor gates on."""
+    """Assert the hold step is the sole member PMM Extensions neither drains nor gates on."""
     assert not NomadStep.is_persistable(NomadStep.LOG_CAPTURE_HOLD)
     assert all(
         NomadStep.is_persistable(step)

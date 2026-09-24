@@ -17,7 +17,7 @@
 
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { createQueryClient } from '@sep/api';
+import { createQueryClient } from '@pmm-extensions/api';
 import { ThemeProvider } from './contexts/theme';
 
 // Fonts — same set as PMM (Roboto for body, Poppins for headings, Roboto Mono for code)

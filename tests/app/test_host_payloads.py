@@ -16,7 +16,7 @@
 """Guard that every Python file shipped to executor hosts runs on Python 3.9.
 
 The load branch needs a real 3.9 interpreter, which CI provides through
-``$SEP_PAYLOAD_CHECK_PYTHON``; see :mod:`tests.app.host_payloads` for how the
+``$EXTENSIONS_PAYLOAD_CHECK_PYTHON``; see :mod:`tests.app.host_payloads` for how the
 file set is derived and why both branches are needed.
 """
 
@@ -28,7 +28,7 @@ from pathlib import Path
 import pytest
 
 from app import BASE_DIR
-from app.sep.routes.artifacts import collect_base_dirs
+from app.extensions.routes.artifacts import collect_base_dirs
 from tests.app.host_payloads import (
     CHECK_PYTHON_ENV,
     discover_host_payloads,
@@ -168,12 +168,12 @@ def test_every_payload_reference_site_is_covered_by_discovery() -> None:
 @pytest.mark.parametrize(
     "landmark",
     [
-        "app/sep/sync/syncers/system_facts/payload.py",
+        "app/extensions/sync/syncers/system_facts/payload.py",
         "app/tasks/connectivity/payload.py",
-        "app/sep/apps/alters/pre_checks.py",
-        "app/sep/apps/backup_mongo/restore/pbm_list_payload",
-        "app/sep/apps/topology/payloads/topology.py",
-        "app/sep/apps/dipper/payloads/pcs-collect-pmm-mysql.py",
+        "app/extensions/apps/alters/pre_checks.py",
+        "app/extensions/apps/backup_mongo/restore/pbm_list_payload",
+        "app/extensions/apps/topology/payloads/topology.py",
+        "app/extensions/apps/dipper/payloads/pcs-collect-pmm-mysql.py",
     ],
 )
 def test_discovery_reaches_each_payload_convention(landmark: str) -> None:
@@ -222,7 +222,7 @@ def _write(root: Path, files: dict[str, str]) -> Path:
     return root
 
 
-_PACKAGE = "app/sep/apps/example"
+_PACKAGE = "app/extensions/apps/example"
 _VALID_PAYLOAD = f"{_PACKAGE}/valid_payload"
 _IMPORT_PAYLOAD_URI = "from app.core.utils.path import payload_uri\n\n"
 
@@ -292,8 +292,8 @@ def test_drift_names_each_undiscovered_payload_and_its_rule(
     "importer",
     [
         "from .models import Thing\n",
-        "from app.sep.apps.example.models import Thing\n",
-        "from app.sep.apps.example import models\n",
+        "from app.extensions.apps.example.models import Thing\n",
+        "from app.extensions.apps.example import models\n",
     ],
     ids=["relative", "absolute-symbol", "absolute-module"],
 )
@@ -372,7 +372,7 @@ def test_discovery_reads_artifact_dirs_and_skips_other_interpreters(
     )
 
     assert discover_host_payloads(root, [root / "artifacts"]) == [
-        root / "app/sep/apps/example/python_payload",
+        root / "app/extensions/apps/example/python_payload",
         root / "artifacts/collector.py",
     ]
 

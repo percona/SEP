@@ -19,11 +19,11 @@
 ``actions/labeler`` has no templated label names, so every ``app:<name>`` rule
 must be enumerated explicitly. Hand-maintaining 15 entries means a newly added
 app silently gets no label, so this script regenerates the block from a
-deterministic filesystem walk of ``app/sep/apps/*`` (mirroring
+deterministic filesystem walk of ``app/extensions/apps/*`` (mirroring
 ``scripts/sync_alembic_version_locations.py``).
 
-An app slice is the full-stack vertical for one app: ``app/sep/apps/<name>/``,
-``frontend/packages/apps/<name>/``, ``tests/app/sep/apps/<name>/``, and
+An app slice is the full-stack vertical for one app: ``app/extensions/apps/<name>/``,
+``frontend/packages/apps/<name>/``, ``tests/app/extensions/apps/<name>/``, and
 ``frontend/packages/e2e/tests/<name>*.spec.ts``. Only surfaces that exist on
 disk are emitted. Name mismatches are resolved by an explicit alias map that is
 asserted against disk, so a stale alias fails the ``--check`` mode instead of
@@ -41,9 +41,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LABELER = REPO_ROOT / ".github" / "labeler.yml"
-APPS_SUBDIR = ("app", "sep", "apps")
+APPS_SUBDIR = ("app", "extensions", "apps")
 
-#: Directories under ``app/sep/apps`` that are framework internals, not apps.
+#: Directories under ``app/extensions/apps`` that are framework internals, not apps.
 EXCLUDED_APPS = frozenset({"framework", "shared"})
 
 #: App name -> e2e spec stem, where the Playwright spec uses hyphens while the
@@ -71,7 +71,7 @@ def discover_apps(apps_root: Path) -> list[str]:
     window in which this walk sees a package that is not an app, and the check
     reports the committed file as stale against a tree that no longer exists.
 
-    :param apps_root: The ``app/sep/apps`` directory to scan.
+    :param apps_root: The ``app/extensions/apps`` directory to scan.
     :return: Sorted directory names, excluding framework internals, private
         directories and the bytecode cache.
     """
@@ -128,15 +128,15 @@ def app_globs(app: str, repo_root: Path) -> list[str]:
     :param repo_root: Repository root the surfaces are resolved against.
     :return: Ordered glob strings for the app's changed-file rule.
     """
-    globs = [f"app/sep/apps/{app}/**"]
+    globs = [f"app/extensions/apps/{app}/**"]
 
     frontend_dir = repo_root / "frontend" / "packages" / "apps" / app
     if frontend_dir.is_dir():
         globs.append(f"frontend/packages/apps/{app}/**")
 
-    tests_dir = repo_root / "tests" / "app" / "sep" / "apps" / app
+    tests_dir = repo_root / "tests" / "app" / "extensions" / "apps" / app
     if tests_dir.is_dir():
-        globs.append(f"tests/app/sep/apps/{app}/**")
+        globs.append(f"tests/app/extensions/apps/{app}/**")
 
     e2e_stem = E2E_ALIASES.get(app, app)
     if _e2e_matches(repo_root / "frontend" / "packages" / "e2e" / "tests", e2e_stem):
@@ -148,7 +148,7 @@ def app_globs(app: str, repo_root: Path) -> list[str]:
 def render_app_block(apps_root: Path, repo_root: Path) -> str:
     """Return the marker-delimited ``app:<name>`` YAML block.
 
-    :param apps_root: The ``app/sep/apps`` directory to scan.
+    :param apps_root: The ``app/extensions/apps`` directory to scan.
     :param repo_root: Repository root the surfaces are resolved against.
     :return: The block text, framed by the BEGIN/END marker comments and
         ending with a trailing newline.
@@ -212,7 +212,7 @@ def sync_labeler(
     """Rewrite or check ``labeler_path`` against the filesystem walk.
 
     :param labeler_path: Path to ``.github/labeler.yml``.
-    :param apps_root: The ``app/sep/apps`` directory to scan.
+    :param apps_root: The ``app/extensions/apps`` directory to scan.
     :param repo_root: Repository root the surfaces are resolved against.
     :param check: When true, report drift without writing.
     :return: ``True`` when the file already matched (or was rewritten);

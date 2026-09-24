@@ -181,7 +181,7 @@ def test_malformed_pin_is_rejected_rather_than_silently_dropped(monkeypatch, tmp
         ('"D:ALLOWED_HOSTS=[]"', "flag prefix"),
         ('"R:ALLOWED_HOSTS=[]"', "flag prefix"),
         ('"D:R:ALLOWED_HOSTS=[]"', "flag prefix"),
-        ('"SEP_INTERNAL_TOKEN={HOME}/t"', "value interpolation"),
+        ('"EXTENSIONS_INTERNAL_TOKEN={HOME}/t"', "value interpolation"),
     ],
 )
 def test_unmodelled_pytest_env_syntax_is_rejected(

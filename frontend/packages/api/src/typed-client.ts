@@ -21,7 +21,7 @@
  *
  * One client per OpenAPI spec (see `scripts/codegen.ts`):
  *   - `mainApi`      — core API (oauth, users)
- *   - `sepApi`       — SEP app
+ *   - `extensionsApi`       — PMM Extensions app
  *
  * The generated `paths` keys include the mount prefix (e.g. `/api/users/me`),
  * so every client uses `baseUrl: CLIENT_BASE_URL`, which resolves to the
@@ -39,7 +39,7 @@ import createClient, { type Client, type Middleware } from 'openapi-fetch';
 import { emitUnauthorized, getToken, isTokenMintRequest, refreshAccessToken } from './client';
 import { ApiError } from './errors';
 import type { paths as MainPaths } from './generated/main';
-import type { paths as SepPaths } from './generated/sep';
+import type { paths as ExtensionsPaths } from './generated/extensions';
 
 const IS_DEV = import.meta.env.DEV;
 
@@ -153,7 +153,7 @@ function makeClient<Paths extends object>(): Client<Paths> {
 }
 
 export const mainApi = makeClient<MainPaths>();
-export const sepApi = makeClient<SepPaths>();
+export const extensionsApi = makeClient<ExtensionsPaths>();
 
 interface FetchResult<T> {
   data?: T;

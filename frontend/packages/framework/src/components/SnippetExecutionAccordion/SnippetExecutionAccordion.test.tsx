@@ -21,13 +21,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { SnippetExecutionAccordion } from './SnippetExecutionAccordion';
-import { apiClient, type AppSchema } from '@sep/api';
+import { apiClient, type AppSchema } from '@pmm-extensions/api';
 import type { TaskHistoryEntry } from '../TaskHistoryTable';
 
 /** Flipped per test to cover the read-only (non-admin) rendering. */
 let mockCanMutate = true;
 
-vi.mock('@sep/api', () => ({
+vi.mock('@pmm-extensions/api', () => ({
   apiClient: { get: vi.fn(), post: vi.fn() },
   useAuth: () => ({ isAdmin: mockCanMutate, canMutate: mockCanMutate }),
 }));
@@ -91,7 +91,7 @@ function makeSchema(extraFields: FormSection['fields'] = []): AppSchema {
 
 /** Schema shaped like the backend's synthesised snippet schema: a dedicated
  * collapsible "Script preview" section whose only field is the read-only
- * `script_preview` ScriptPreviewField (see app/sep/snippets/schema.py). */
+ * `script_preview` ScriptPreviewField (see app/extensions/snippets/schema.py). */
 function makeSchemaWithPreview(): AppSchema {
   const base = makeSchema();
   return {
@@ -222,7 +222,9 @@ describe('SnippetExecutionAccordion', () => {
     mockedApi.get.mockImplementation((url: string) =>
       Promise.resolve({
         data:
-          url === '/sep/hosts/' ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }] : makeSchema(),
+          url === '/extensions/hosts/'
+            ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }]
+            : makeSchema(),
         headers: {},
       }),
     );
@@ -331,7 +333,9 @@ describe('SnippetExecutionAccordion', () => {
 
     await userEvent.click(await screen.findByRole('button', { name: 'Stop 99' }));
 
-    await waitFor(() => expect(mockedApi.post).toHaveBeenCalledWith('/sep/task-history/99/stop/'));
+    await waitFor(() =>
+      expect(mockedApi.post).toHaveBeenCalledWith('/extensions/task-history/99/stop/'),
+    );
 
     // The stop hook only invalidates ['task-history']; this accordion's history
     // is keyed under ['snippets', filename, 'history'], so the wired onSuccess
@@ -422,7 +426,9 @@ describe('SnippetExecutionAccordion', () => {
     mockedApi.get.mockImplementation((url: string) =>
       Promise.resolve({
         data:
-          url === '/sep/hosts/' ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }] : makeSchema(),
+          url === '/extensions/hosts/'
+            ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }]
+            : makeSchema(),
         headers: {},
       }),
     );
@@ -456,7 +462,9 @@ describe('SnippetExecutionAccordion', () => {
     mockedApi.get.mockImplementation((url: string) =>
       Promise.resolve({
         data:
-          url === '/sep/hosts/' ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }] : makeSchema(),
+          url === '/extensions/hosts/'
+            ? [{ id: 'db2', name: 'db2', address: '10.0.0.2' }]
+            : makeSchema(),
         headers: {},
       }),
     );
