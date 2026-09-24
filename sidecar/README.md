@@ -577,7 +577,7 @@ To re-apply one schema step without restarting the container, clear its sentinel
 first, then restart that one-shot together with the API programs:
 
 ```
-docker exec <container> /home/extensions/app/clear_sentinels.sh sep
+docker exec <container> /home/extensions/app/clear_sentinels.sh extensions
 docker exec <container> supervisorctl -c /home/extensions/app/supervisord.conf \
     restart migrate-extensions extensions inventory tasks
 ```
@@ -601,7 +601,7 @@ the one-shot reaches the `rm -f` at the head of its own command. Once the
 sentinel is cleared there is nothing stale left to observe and the order stops
 mattering.
 
-**Name every step you are re-running, in one call** — `clear_sentinels.sh sep
+**Name every step you are re-running, in one call** — `clear_sentinels.sh extensions
 tasks`, then `restart migrate-extensions migrate-tasks extensions inventory tasks`. The script
 takes the bare step names the gate takes, not `supervisord` program names:
 `migrate-extensions` is refused.

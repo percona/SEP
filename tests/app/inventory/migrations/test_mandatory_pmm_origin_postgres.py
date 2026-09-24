@@ -47,7 +47,7 @@ POSTGRES_DSN_ENV = "EXTENSIONS_TEST_POSTGRES_DSN"
 # The head immediately before the PMM origin becomes mandatory.
 _PRE_ORIGIN_REVISION = "c7d1e94ab3f2"
 
-_LEGACY_PREFIX = "extensions-legacy:"
+PRE_RENAME_LEGACY_PREFIX = "sep-legacy:"
 
 _MANDATORY_COLUMNS = (
     ("node", "external_id"),
@@ -214,7 +214,7 @@ def test_backfill_writes_a_valid_enum_label(inventory_postgres_config):
 
     node = _await(url, lambda conn: _row(conn, "node", node_id))
     assert node["source"] == "PMM"
-    assert node["external_id"] == f"{_LEGACY_PREFIX}{node_id}"
+    assert node["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node_id}"
 
 
 def test_set_not_null_lands_on_the_native_path(inventory_postgres_config):

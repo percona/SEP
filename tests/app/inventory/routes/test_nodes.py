@@ -54,6 +54,8 @@ OBSERVED_NODE_COUNT = 2
 # part of the API contract, so an edit to the constant must fail the test.
 UNCOLLECTED_NODE_DETAIL = "System observation not collected yet for this node"
 
+PRE_RENAME_LEGACY_PREFIX = "sep-legacy:"
+
 
 class TestListNodes:
     """Test the GET /nodes/ endpoint."""
@@ -84,12 +86,12 @@ class TestListNodes:
     ) -> None:
         """Serve a tombstone carrying the migration's synthetic origin.
 
-        The migration stamps ``extensions-legacy:<pk>`` onto a brownfield row so the
-        NOT NULL constraint can land. ``NodeResponse`` now requires an origin, so
-        the stamped value is what keeps such a row readable at all through the
+        The migration stamps a legacy-prefixed ``external_id`` onto a brownfield row
+        so the NOT NULL constraint can land. ``NodeResponse`` now requires an origin,
+        so the stamped value is what keeps such a row readable at all through the
         retired-inclusive route the historical and sync paths use.
         """
-        node.external_id = f"extensions-legacy:{node.id}"
+        node.external_id = f"{PRE_RENAME_LEGACY_PREFIX}{node.id}"
         node.source = SourceEnum.PMM
         session.add(node)
         await session.commit()
@@ -101,7 +103,7 @@ class TestListNodes:
         retired = test_client.get(f"/nodes/{node.id}", params={"include_retired": True})
         assert retired.status_code == status.HTTP_200_OK
         body = retired.json()
-        assert body["external_id"] == f"extensions-legacy:{node.id}"
+        assert body["external_id"] == f"{PRE_RENAME_LEGACY_PREFIX}{node.id}"
         assert body["source"] == SourceEnum.PMM.value
         assert body["retired_at"] is not None
 
