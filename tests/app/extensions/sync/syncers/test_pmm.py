@@ -1650,7 +1650,8 @@ class TestTombstoneReconciliation:
 
         The unique key admits one active row per external id plus any number of
         tombstones, so a retired-inclusive read returns both. Matching the
-        tombstone would attempt a revive the active row's key refuses.
+        tombstone instead would attempt a revive, which collides with the active
+        row already holding that external id.
         """
         local_node.retired_at = utc_now()
         replacement = CreatedNodeFactory.build(id=local_node.id + 1)
