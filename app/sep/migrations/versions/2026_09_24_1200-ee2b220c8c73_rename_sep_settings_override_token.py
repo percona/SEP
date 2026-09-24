@@ -54,8 +54,8 @@ down_revision = "cbc3026013de"
 branch_labels = None
 depends_on = None
 
-_OLD_TOKEN = "SEP_SETTINGS"
-_NEW_TOKEN = "EXTENSIONS_SETTINGS"
+_OLD_SETTING_CLASS = "SEP_SETTINGS"
+_NEW_SETTING_CLASS = "EXTENSIONS_SETTINGS"
 _OLD_MARKER = "sep.enc.v1."
 _NEW_MARKER = "extensions.enc.v1."
 
@@ -80,10 +80,10 @@ def _retoken(source: str, target: str) -> None:
 
 def upgrade() -> None:
     """Move the service settings' rows and every stored marker to the new names."""
-    _retoken(_OLD_TOKEN, _NEW_TOKEN)
+    _retoken(_OLD_SETTING_CLASS, _NEW_SETTING_CLASS)
     rename_ciphertext_marker(_OLD_MARKER, _NEW_MARKER)
 
 
 def downgrade() -> None:
     """Restore the ``SEP_SETTINGS`` token the earlier revisions expect."""
-    _retoken(_NEW_TOKEN, _OLD_TOKEN)
+    _retoken(_NEW_SETTING_CLASS, _OLD_SETTING_CLASS)
