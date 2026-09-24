@@ -475,7 +475,7 @@ that full form over `--with typecheck`, which installs *fewer* groups than
 thinner environment changes what it reports.
 
 The exact pin means ty's own behaviour cannot drift under the gate; what can
-drift is the tree beneath it. The SEP team owns the upgrade cadence a blocking
+drift is the tree beneath it. The PMM Extensions team owns the upgrade cadence a blocking
 gate creates, revisited each release cycle alongside the re-measure rule in
 *Changing this policy* below.
 
