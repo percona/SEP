@@ -78,15 +78,10 @@ async def get_dashboard_stats(
     counts as healthy data.
 
     :param response: The outgoing response used to attach the error header.
-    :type response: Response
     :param session: The active database session for snippet queries.
-    :type session: AsyncSession
     :param tasks_api: Async client for the Tasks sub-app.
-    :type tasks_api: RemoteAPI
     :param inventory_api: Async client for the Inventory sub-app.
-    :type inventory_api: RemoteAPI
     :return: Aggregate counts for nodes, tasks, snippets, and targets.
-    :rtype: DashboardStatsResponse
     """
 
     async def _nodes() -> int:

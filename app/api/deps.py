@@ -71,9 +71,7 @@ def _build_service_principal(secret: str) -> BaseUser:
     the value must be assigned via the property setter after the copy.
 
     :param secret: The unwrapped ``EXTENSIONS_INTERNAL_TOKEN`` value.
-    :type secret: str
     :return: A fresh copy of the singleton with ``access_token`` populated.
-    :rtype: User
     """
     user = SERVICE_PRINCIPAL.model_copy()
     user.access_token = secret

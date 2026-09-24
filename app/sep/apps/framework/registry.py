@@ -493,7 +493,6 @@ def build_app_registry(plugins: Iterable[App]) -> AppRegistry:
 
     :param plugins: The ``EXTENSIONS.APPS`` activation entries, in order.
     :return: The ordered registry.
-    :rtype: AppRegistry
     """
     apps = []
     for plugin in plugins:

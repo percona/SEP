@@ -157,7 +157,6 @@ def merged_openapi_json() -> JSONResponse:
     the source of truth for the React frontend's ``openapi-typescript`` codegen.
 
     :return: The merged OpenAPI 3.x JSON document.
-    :rtype: JSONResponse
     """
     return JSONResponse(_get_merged_openapi())
 

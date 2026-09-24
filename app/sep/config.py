@@ -824,7 +824,7 @@ class ExtensionsSettings(BaseYamlAppSettings):
         ``EXTENSIONS.PMM`` was removed; PMM connection/auth config now lives
         only under the top-level ``PMM`` section, and the alerts fields it used to
         carry moved to the alerts-owned ``EXTENSIONS.ALERTS`` section. A leftover ``PMM``
-        key under ``SEP`` (any case, including the ``EXTENSIONS__PMM__*`` env-var path) is
+        key under ``EXTENSIONS`` (any case, including the ``EXTENSIONS__PMM__*`` env-var path) is
         rejected with a ``ValueError`` -- which pydantic wraps into a
         ``ValidationError`` -- so upgraded deployments fail fast at startup instead
         of silently carrying dead config.

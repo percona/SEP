@@ -153,7 +153,7 @@ class _FrozenDeliveryPlanInputs(BaseModel):
     secrets: dict[str, SecretStr] | None = None
 
 
-class _FrozenSEPSettings(BaseModel):
+class _FrozenSEPSettings(BaseModel):  # offdiff-ok: frozen replica of the class as named when this revision shipped
     """Declare the frozen credential-bearing fields of ``SEPSettings``."""
 
     __setting_class_token__ = _SEP_SETTINGS_CLASS

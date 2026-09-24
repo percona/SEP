@@ -407,7 +407,7 @@ both are present in the same source, the more specific name wins regardless of
 ordering. Across sources the usual priority still applies, so an environment
 variable outranks a file whichever spelling each uses. A name spelled
 with another class's prefix — `INVENTORY__DATABASE__PASSWORD` read by
-`SEPSettings`, say — stays invisible to that class.
+`ExtensionsSettings`, say — stays invisible to that class.
 
 Surrounding whitespace is stripped, so a trailing newline is fine. A file only applies
 when nothing higher in the priority list supplies the same setting: an environment

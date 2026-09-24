@@ -117,8 +117,9 @@ default:
   # Connection budget. PMM gives the `pmm_extensions` role no connection limit;
   # the cap is PostgreSQL's server-wide max_connections of 2000, which every PMM
   # new enough to provision the `pmm_extensions` role sets, shared with
-  # pmm-managed (50) and Grafana (100). The side-car holds itself to 10% of it. Worst case with every pool full, where
-  # an engine's ceiling is POOL_SIZE + MAX_OVERFLOW:
+  # pmm-managed (50) and Grafana (100). The side-car holds itself to 10% of it.
+  # Worst case with every pool full, where an engine's ceiling is POOL_SIZE +
+  # MAX_OVERFLOW:
   #   sep          2 x 5 + celery-DB 15                    25
   #   inventory    1 x 5                                    5
   #   tasks        2 x 5 + celery-DB 15                    25

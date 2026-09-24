@@ -55,7 +55,8 @@ from app.sep.snippets.config import snippets_settings, SnippetsSettings
 
 # TasksSettings is owned by the Tasks sub-app, so SEP proxies it server-side
 # through ``tasks_api`` (mounted at ``/admin/settings``) rather than registering
-# it as a local class -- the React Settings page reaches it via ``/api/extensions`` only.
+# it as a local class. The React Settings page reaches it via ``/api/extensions``
+# only.
 EXTENSIONS_ADMIN_SETTINGS_CLASSES: list[ClassEntry] = [
     (SettingClassEnum.EXTENSIONS_SETTINGS, ExtensionsSettings, sep_settings),
     (SettingClassEnum.SNIPPETS_SETTINGS, SnippetsSettings, snippets_settings),
@@ -188,16 +189,13 @@ def _parse_export_selectors(
     A whole-class selector dominates the *output* for its class (every key is
     emitted) but does not suppress validation of any named sibling selector: a
     ``Class.KEY`` is always recorded so its existence is checked later, even when
-    a bare ``Class`` selector is also present (AC 6). Overlapping or duplicate
+    a bare ``Class`` selector is also present. Overlapping or duplicate
     selectors are otherwise benign and never error.
 
     :param keys: The raw, repeatable ``keys`` query values.
-    :type keys: list[str]
     :param allowed_classes: The set of wired settings-class names a selector may
         reference (core SEP classes, app-owned classes, and ``TasksSettings``).
-    :type allowed_classes: set[str]
     :return: A mapping from class name to its parsed :class:`_ClassRequest`.
-    :rtype: dict[str, _ClassRequest]
     :raises HTTPBadRequestException: If a selector is blank, malformed (empty
         class or empty key), or names a class that is not wired -- the detail
         names the offending selector.
@@ -390,14 +388,10 @@ async def export_settings(
     ``TasksSettings``), independent of selector order.
 
     :param session: The active database session for SEP override queries.
-    :type session: AsyncSession
     :param tasks_api: The Tasks API client used to fetch ``TasksSettings``.
-    :type tasks_api: TaskAPI
     :param keys: Optional, repeatable selectors restricting the export to a
         subset of classes/keys. ``None`` (omitted) means the full export.
-    :type keys: list[str] | None
     :return: YAML bytes with ``Content-Disposition`` set for download.
-    :rtype: Response
     :raises HTTPBadRequestException: If a selector is blank, malformed, names an
         unwired class, or names a key that does not exist on its class.
     :raises HTTPBadGatewayException: If the Tasks settings LIST call fails

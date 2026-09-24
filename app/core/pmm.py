@@ -66,13 +66,9 @@ async def create_pmm_annotation(
     awaiting directly blocks for up to ``settings.PMM.annotations_timeout`` seconds.
 
     :param text: Annotation text (e.g. ``"PMM Extensions: backup_data - STARTED"``).
-    :type text: str
     :param node_name: PMM node name from execution target.
-    :type node_name: str
     :param tags: Optional tags for the annotation.
-    :type tags: list[str] | None
     :param service_names: PMM service names from task metadata.
-    :type service_names: list[str] | None
     """
     if not settings.PMM.annotations_enabled:
         return
