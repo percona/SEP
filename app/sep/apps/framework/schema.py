@@ -1573,7 +1573,7 @@ def _require_item_display_names_in_json_schema(
     :param json_schema: The JSON schema Pydantic built for the model; mutated
         in place.
     """
-    required = set(json_schema.get("required") or ())
+    required: set[str] = set(json_schema.get("required") or ())
     required.update(ITEM_DISPLAY_NAME_KEYS)
     json_schema["required"] = sorted(required)
     properties = json_schema.get("properties") or {}
