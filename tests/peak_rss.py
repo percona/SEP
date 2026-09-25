@@ -23,13 +23,14 @@ session finishes::
 
 The controller then prints one line per process and the median over the
 workers, which is the figure to compare between runs. A test that runs
-``pytest.main`` in-process starts a nested session that loads this conftest and
-finishes first, so only the last line per ``pid`` counts: the outermost session
-always finishes last. A test that runs pytest in a subprocess passes the
-variable on, and ``ru_maxrss`` survives ``execve``, so that subprocess logs its
-spawning worker's peak as a ``controller``; the summary keeps only the
-``controller`` line written by the process printing it. The controller's own peak is excluded
-from the median because it collects and runs nothing under xdist.
+``pytest.main`` in-process starts a nested session that loads the root
+``conftest.py`` and finishes first, so only the last line per ``pid`` counts:
+the outermost session always finishes last. A test that runs pytest in a
+subprocess passes the variable on, and ``ru_maxrss`` survives ``execve``, so
+that subprocess logs its spawning worker's peak as a ``controller``; the summary
+keeps only the ``controller`` line written by the process printing it. The
+controller's own peak is excluded from the median because it collects and runs
+nothing under xdist.
 
 Lines are appended, never truncated, so point each run at a fresh path; a
 reused file mixes runs into one median. The file's directory must already

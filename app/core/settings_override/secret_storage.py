@@ -648,8 +648,9 @@ def _credential_url_text(value: Any) -> str | None:
     :data:`~app.core.utils.fields.CredentialHttpUrl` field is a
     :class:`~pydantic.HttpUrl` rather than a string; the migration and read
     paths hand it the JSON column's text. Both reach this leaf, so the branch
-    normalizes every URL object pydantic produces (an :class:`~pydantic.AnyUrl`
-    subclass or a bare :class:`pydantic_core.Url`) rather than testing for
+    normalizes pydantic's single-host URL objects (an :class:`~pydantic.AnyUrl`
+    subclass such as :class:`~pydantic.HttpUrl`, or a bare
+    :class:`pydantic_core.Url`) rather than testing for
     ``str`` — a ``str``-only guard would
     silently skip every field typed ``CredentialHttpUrl`` on the one path that
     writes them.
