@@ -38,7 +38,7 @@ def test_casdoor_credentials_masked_in_repr():
 
 
 def test_casdoor_credential_value_encodes_secret_values():
-    """Test that _credential_value correctly encodes the secret credentials."""
+    """Assert ``_credential_value`` encodes the secret credentials."""
     sdk = CasdoorSDK(
         endpoint="https://casdoor.example.com",
         client_id="test-id",
@@ -60,7 +60,7 @@ def test_casdoor_credential_value_with_empty_credentials():
 
 
 def test_casdoor_credential_value_recomputes_after_credentials_change():
-    """Test that _credential_value reflects mutated credentials (it is not cached)."""
+    """Assert ``_credential_value`` reflects mutated credentials (it is not cached)."""
     sdk = CasdoorSDK(
         endpoint="https://casdoor.example.com",
         client_id="test-id",
@@ -92,7 +92,7 @@ def test_casdoor_headers_carry_basic_authorization():
 
 
 def test_casdoor_declares_no_stored_credential_settings():
-    """Casdoor must not expose unused api_key / auth_scheme as provider settings."""
+    """Assert ``api_key`` and ``auth_scheme`` are absent from Casdoor provider settings."""
     assert "api_key" not in CasdoorSDK.model_fields
     assert "auth_scheme" not in CasdoorSDK.model_fields
 
