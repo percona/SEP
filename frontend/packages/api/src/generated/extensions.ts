@@ -4783,7 +4783,8 @@ export interface components {
      *         while not failing.
      *     :param consecutive_failures: Failed attempts since the last success.
      *     :param newest_attempt_at: When the newest accepted attempt began, whatever
-     *         its outcome, or None if none has been reported.
+     *         its outcome, or ``None`` if none has been reported, or the upgrade
+     *         time for a row that was failing when the column was added.
      *     :param services: A list of services associated with the node.
      */
     Node: {
@@ -4919,7 +4920,8 @@ export interface components {
      *         while not failing.
      *     :param consecutive_failures: Failed attempts since the last success.
      *     :param newest_attempt_at: When the newest accepted attempt began, whatever
-     *         its outcome, or None if none has been reported.
+     *         its outcome, or ``None`` if none has been reported, or the upgrade
+     *         time for a row that was failing when the column was added.
      *     :param tables: A list of tables within the schema.
      */
     Schema: {
@@ -6052,7 +6054,8 @@ export interface components {
      *         while not failing.
      *     :param consecutive_failures: Failed attempts since the last success.
      *     :param newest_attempt_at: When the newest accepted attempt began, whatever
-     *         its outcome, or None if none has been reported.
+     *         its outcome, or ``None`` if none has been reported, or the upgrade
+     *         time for a row that was failing when the column was added.
      */
     app__inventory__models__ServiceResponse: {
       /** Cluster */
