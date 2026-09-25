@@ -141,7 +141,7 @@
 | app/extensions/apps/archives/form\_backfill.py                                                                                      |      141 |       16 |       72 |       16 |     85% |43, 56, 59, 68-69, 71, 75, 82, 102, 118, 167-\>169, 181-\>184, 186, 196, 226, 230, 238, 280 |
 | app/extensions/apps/archives/models.py                                                                                              |       76 |        0 |        4 |        0 |    100% |           |
 | app/extensions/apps/archives/spec.py                                                                                                |       55 |       10 |       24 |        7 |     76% |106, 133, 156-\>164, 166, 173, 177-180, 182-183 |
-| app/extensions/apps/archives/views.py                                                                                               |        4 |        0 |        0 |        0 |    100% |           |
+| app/extensions/apps/archives/views.py                                                                                               |        6 |        0 |        0 |        0 |    100% |           |
 | app/extensions/apps/atw/api\_routes.py                                                                                              |      272 |       50 |       48 |        2 |     80% |323, 441-442, 544-545, 549-555, 624, 628-657, 659-675, 684, 686-702, 722-724, 934-\>941, 935, 991-992, 994-997, 999-1002, 1020, 1038, 1077 |
 | app/extensions/apps/atw/app.py                                                                                                      |       15 |        0 |        4 |        0 |    100% |           |
 | app/extensions/apps/atw/batch.py                                                                                                    |       76 |        0 |        8 |        0 |    100% |           |
@@ -533,7 +533,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33560** | **1917** | **8106** |  **676** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33562** | **1917** | **8106** |  **676** | **93%** |           |
 
 
 ## Setup coverage badge
