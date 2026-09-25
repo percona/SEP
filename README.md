@@ -394,7 +394,7 @@
 | app/extensions/utils/jinja.py                                                                                                       |       61 |       10 |       10 |        1 |     79% |105, 124, 135-140, 171-172 |
 | app/inventory/config.py                                                                                                             |       12 |        0 |        0 |        0 |    100% |           |
 | app/inventory/constants.py                                                                                                          |       15 |        0 |        0 |        0 |    100% |           |
-| app/inventory/crud.py                                                                                                               |      386 |        6 |       72 |        3 |     98% |338, 506-508, 782-\>784, 969, 1297, 1821-\>exit |
+| app/inventory/crud.py                                                                                                               |      388 |        6 |       72 |        3 |     98% |365, 533-535, 809-\>811, 996, 1324, 1848-\>exit |
 | app/inventory/db.py                                                                                                                 |        6 |        0 |        0 |        0 |    100% |           |
 | app/inventory/deps.py                                                                                                               |       72 |        9 |        4 |        0 |     83% |63-65, 328-330, 349-351 |
 | app/inventory/main.py                                                                                                               |       44 |        6 |        2 |        1 |     85% |52, 97-98, 136-140 |
@@ -424,9 +424,12 @@
 | app/inventory/migrations/versions/2026\_09\_16\_0212-b351dd0aaed8\_add\_can\_elevate\_to\_host\_system\_.py                         |       10 |        0 |        0 |        0 |    100% |           |
 | app/inventory/migrations/versions/2026\_09\_18\_1512-6ee7bfe9c9d3\_unmark\_secret\_setting\_overrides.py                            |       16 |        0 |        0 |        0 |    100% |           |
 | app/inventory/migrations/versions/2026\_09\_21\_1930-a1f7c3d95e82\_require\_one\_host\_observation\_fact.py                         |       32 |        0 |        6 |        0 |    100% |           |
+| app/inventory/migrations/versions/2026\_09\_23\_1615-bed760f9fb35\_add\_newest\_attempt\_at\_to\_inventory\_.py                     |       17 |        0 |        4 |        0 |    100% |           |
+| app/inventory/migrations/versions/2026\_09\_24\_1116-0553c4e5a34a\_merge\_inventory\_migration\_heads.py                            |       12 |        0 |        0 |        0 |    100% |           |
 | app/inventory/migrations/versions/2026\_09\_24\_1200-fe8581ce9dc2\_rename\_ciphertext\_marker.py                                    |       10 |        0 |        0 |        0 |    100% |           |
 | app/inventory/migrations/versions/2026\_09\_24\_2016-c5a72c6cdbf4\_merge\_inventory\_migration\_heads.py                            |       12 |        0 |        0 |        0 |    100% |           |
-| app/inventory/models.py                                                                                                             |      160 |        0 |        8 |        0 |    100% |           |
+| app/inventory/migrations/versions/2026\_09\_25\_2106-13204e7e1043\_merge\_inventory\_migration\_heads.py                            |       12 |        0 |        0 |        0 |    100% |           |
+| app/inventory/models.py                                                                                                             |      161 |        0 |        8 |        0 |    100% |           |
 | app/inventory/routes/collection.py                                                                                                  |       23 |        7 |        6 |        1 |     59% |73-74, 76-80 |
 | app/inventory/routes/nodes.py                                                                                                       |       78 |        2 |        4 |        0 |     95% |  329, 331 |
 | app/inventory/routes/schemas.py                                                                                                     |       42 |        0 |        0 |        0 |    100% |           |
@@ -533,7 +536,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33597** | **1915** | **8116** |  **676** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33641** | **1915** | **8120** |  **676** | **93%** |           |
 
 
 ## Setup coverage badge
