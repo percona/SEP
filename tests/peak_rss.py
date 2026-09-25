@@ -19,10 +19,13 @@ Setting ``PYTEST_PEAK_RSS_FILE`` to a file path makes every process of the run,
 each xdist worker and the controller, append one JSON line to that file when its
 session finishes::
 
-    {"worker": "gw0", "peak_rss_mb": 658}
+    {"worker": "gw0", "pid": 4242, "peak_rss_mb": 658}
 
-The controller then prints every line and the median over the workers, which
-is the figure to compare between runs. The controller's own peak is excluded
+The controller then prints one line per process and the median over the
+workers, which is the figure to compare between runs. A test that runs
+``pytest.main`` in-process starts a nested session that loads this conftest and
+finishes first, so only the last line per ``pid`` counts: the outermost session
+always finishes last. The controller's own peak is excluded
 from the median because it collects and runs nothing under xdist.
 
 Lines are appended, never truncated, so point each run at a fresh path; a
@@ -74,7 +77,9 @@ def record_peak_rss(config: Any) -> None:
         return
     workerinput = getattr(config, "workerinput", None)
     worker = workerinput["workerid"] if workerinput else CONTROLLER
-    line = json.dumps({"worker": worker, "peak_rss_mb": _peak_rss_mb()})
+    line = json.dumps(
+        {"worker": worker, "pid": os.getpid(), "peak_rss_mb": _peak_rss_mb()}
+    )
     with path.open("a", encoding="utf-8") as report:
         report.write(line + "\n")
 
@@ -88,9 +93,13 @@ def peak_rss_summary() -> list[str]:
     path = _report_path()
     if path is None:
         return []
-    records = [
-        json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()
-    ]
+    by_process: dict[object, dict[str, Any]] = {}
+    for index, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
+        record = json.loads(line)
+        process = record.get("pid", index)
+        by_process.pop(process, None)
+        by_process[process] = record
+    records = list(by_process.values())
     lines = [f"{record['worker']}: {record['peak_rss_mb']} MB" for record in records]
     worker_peaks = [
         record["peak_rss_mb"] for record in records if record["worker"] != CONTROLLER

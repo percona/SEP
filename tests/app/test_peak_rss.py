@@ -142,6 +142,26 @@ def test_median_summary_excludes_controller(
     assert "gw3: 900 MB" in summary
 
 
+def test_nested_session_in_the_same_process_is_superseded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Keep only the outermost session's line when a test runs ``pytest.main``.
+
+    A nested in-process session loads the root conftest too and finishes first,
+    without ``workerinput``, so it would otherwise add a second ``controller``
+    line carrying the worker's own peak.
+    """
+    report = tmp_path / "rss.jsonl"
+    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
+
+    record_peak_rss(SimpleNamespace())
+    record_peak_rss(SimpleNamespace(workerinput={"workerid": "gw3"}))
+
+    summary = peak_rss_summary()
+    assert [line.split(":")[0] for line in summary[:-1]] == ["gw3"]
+    assert summary[-1].endswith("over 1 worker(s)")
+
+
 def test_summary_without_workers_reports_no_median(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
