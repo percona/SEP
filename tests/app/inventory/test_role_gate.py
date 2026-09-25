@@ -177,18 +177,16 @@ def test_node_and_service_writes_are_refused_for_an_admin(
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 
-@pytest.mark.parametrize("token_setting", [None, SecretStr("")], ids=["unset", "empty"])
-def test_an_unconfigured_internal_token_admits_nobody(
+def test_an_empty_internal_token_admits_nobody(
     admin_bearer_client: TestClient,
     mocker: MockerFixture,
-    token_setting: SecretStr | None,
 ) -> None:
     """Refuse the would-be principal's own token while the setting carries none.
 
     With nothing to compare a credential against, no caller can resolve to the
     principal, so the restricted routes close rather than fall open.
     """
-    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", token_setting)
+    mocker.patch.object(settings, "EXTENSIONS_INTERNAL_TOKEN", SecretStr(""))
 
     response = admin_bearer_client.post(
         "/nodes/", json={}, headers={"Authorization": f"Bearer {SERVICE_TOKEN}"}

@@ -469,9 +469,27 @@ class TestPluginModuleNameResolution:
     def test_sibling_backup_module_resolves(
         self, sibling_value: str, expected_module: str
     ):
-        """Sibling plugins whose names begin with ``backup`` resolve unchanged."""
+        """Resolve a sibling ``backup``-prefixed plugin without remapping it."""
         plugin = App(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
+
+
+class TestAppsModuleExistenceAtLoad:
+    """Cover the ``APPS`` module-existence probe at full-settings construction."""
+
+    def test_missing_module_rejects_full_settings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject a missing app package even when its registration is disabled."""
+        monkeypatch.setenv(
+            "EXTENSIONS__APPS",
+            '[{"MODULE_NAME": "_scaffold_missing_package", "ENABLED": false}]',
+        )
+        with pytest.raises(
+            ValidationError,
+            match=r"No module named app\.extensions\.apps\._scaffold_missing_package",
+        ):
+            ExtensionsSettings()
 
 
 class TestPluginNameOptional:
@@ -770,16 +788,24 @@ class TestSyncerExtrasValidatedAtLoad:
         assert "ISO-8601" in message
         assert "HH:MM:SS" in message
 
-    def test_dunder_leaf_grace_below_floor_is_rejected_at_load(
-        self, monkeypatch: pytest.MonkeyPatch
+    @pytest.mark.parametrize(
+        ("field", "value"),
+        [
+            ("MISSING_GRACE_GENERATIONS", "0"),
+            ("TASK_EXECUTION_TIMEOUT", "0"),
+            ("TASK_EXECUTION_TIMEOUT", "-1"),
+            ("TASKS_EXECUTION_WAIT_INTERVAL", "0"),
+            ("TASKS_EXECUTION_WAIT_INTERVAL", "-1"),
+        ],
+    )
+    def test_dunder_leaf_threshold_below_floor_is_rejected_at_load(
+        self, field: str, value: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Reject a grace counter that collapses to single-absence retirement."""
+        """Reject a threshold below its floor from the environment leaf form."""
         monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(self._PMM))
-        monkeypatch.setenv(
-            "EXTENSIONS__SYNCER_EXTRA_KWARGS__MISSING_GRACE_GENERATIONS", "0"
-        )
+        monkeypatch.setenv(f"EXTENSIONS__SYNCER_EXTRA_KWARGS__{field}", value)
 
-        with pytest.raises(ValidationError, match="MISSING_GRACE_GENERATIONS"):
+        with pytest.raises(ValidationError, match=field):
             ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
 
     @pytest.mark.parametrize(
@@ -788,21 +814,40 @@ class TestSyncerExtrasValidatedAtLoad:
             ("MISSING_GRACE_GENERATIONS", 0),
             ("MISSING_GRACE_GENERATIONS", 1),
             ("STALE_RUN_AFTER", 0),
+            ("TASK_EXECUTION_TIMEOUT", 0),
+            ("TASK_EXECUTION_TIMEOUT", -1),
+            ("TASKS_EXECUTION_WAIT_INTERVAL", 0),
+            ("TASKS_EXECUTION_WAIT_INTERVAL", -1),
         ],
     )
     def test_per_entry_threshold_below_the_floor_is_rejected(
         self, field: str, value: int
     ) -> None:
-        """Refuse to load a single-absence deletion threshold from a syncer entry.
+        """Refuse to load a threshold below its safe floor from a syncer entry.
 
         ``SyncOptions`` carries ``extra="allow"`` and does not validate these keys
         itself, so the merge validator is what stands between a deployment's settings
-        and a syncer that deletes on first absence.
+        and a syncer carrying an unsafe value.
         """
         with pytest.raises(ValidationError, match=field):
             ExtensionsSettings.model_validate(
                 {"SYNCERS": [{"SYNCER": self._PMM, field: value}]}
             )
+
+    @pytest.mark.parametrize(
+        "field", ["TASK_EXECUTION_TIMEOUT", "TASKS_EXECUTION_WAIT_INTERVAL"]
+    )
+    def test_json_env_non_positive_task_timing_is_rejected_at_load(
+        self, field: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject a non-positive task timing value from the JSON environment form."""
+        monkeypatch.setenv(
+            "EXTENSIONS__SYNCERS",
+            json.dumps([{"SYNCER": self._PMM, field: 0}]),
+        )
+
+        with pytest.raises(ValidationError, match=field):
+            ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
 
     def test_env_hint_is_offered_but_not_asserted_for_an_extras_string(self) -> None:
         """Explain the env leaf's quoting without claiming it is what happened.
