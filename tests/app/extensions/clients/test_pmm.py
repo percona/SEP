@@ -108,7 +108,7 @@ class TestAlertingHeaders:
 
 
 class TestAuthorizationHeaders:
-    """Regression: persistent Authorization header after StoredCredentialHeaderMixin."""
+    """Test the Authorization header on PMM requests."""
 
     def test_headers_carry_bearer_authorization(
         self, pmm_remote_api: PMMRemoteAPI

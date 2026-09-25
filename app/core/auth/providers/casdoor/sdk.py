@@ -133,9 +133,8 @@ class CasdoorSDK(CredentialHeaderMixin, RemoteAPI):
     def _credential_value(self) -> str | None:
         """Return the Base64-encoded client credentials for Basic auth.
 
-        Encodes ``client_id`` and ``client_secret`` the same way the former
-        ``api_key`` property did. No stored ``api_key`` field is declared, so
-        none appears as an AUTH provider setting.
+        Encodes ``client_id`` and ``client_secret`` as
+        ``client_id:client_secret`` into a Base64 string.
 
         :return: The Base64-encoded credential.
         """
