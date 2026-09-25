@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_fee804d4d06b79c7_pmm_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 21:47 +0000
+            created at 2026-09-25 22:39 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -729,7 +729,7 @@
     <p class="pln"><span class="n"><a id="t645" href="#t645">645</a></span><span class="t">        <span class="com"># active-only, so prepare_sync never opened a SyncItem for a tombstone and</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t646" href="#t646">646</a></span><span class="t">        <span class="com"># there is none to close.</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t647" href="#t647">647</a></span><span class="t">        <span class="key">for</span> <span class="nam">schema</span> <span class="key">in</span> <span class="nam">syncable_schemas</span><span class="op">.</span><span class="nam">values</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t648" href="#t648">648</a></span><span class="t">            <span class="key">if</span> <span class="nam">schema</span><span class="op">.</span><span class="nam">retired_at</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t648" href="#t648">648</a></span><span class="t">            <span class="key">if</span> <span class="key">not</span> <span class="nam">schema</span><span class="op">.</span><span class="nam">is_retired</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t649" href="#t649">649</a></span><span class="t">                <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">retire_schema</span><span class="op">(</span><span class="nam">schema</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t650" href="#t650">650</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t651" href="#t651">651</a></span><span class="t">    <span class="key">async</span> <span class="key">def</span> <span class="nam">fetch_schema</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">created_schema</span><span class="op">:</span> <span class="nam">CreatedSchema</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">MySQLSchema</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -828,7 +828,7 @@
     <p class="run run2"><span class="n"><a id="t744" href="#t744">744</a></span><span class="t">                <span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t745" href="#t745">745</a></span><span class="t">            <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">sync_table</span><span class="op">(</span><span class="nam">created_table</span><span class="op">,</span> <span class="nam">table</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t746" href="#t746">746</a></span><span class="t">        <span class="key">for</span> <span class="nam">table</span> <span class="key">in</span> <span class="nam">syncable_tables</span><span class="op">.</span><span class="nam">values</span><span class="op">(</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t747" href="#t747">747</a></span><span class="t">            <span class="key">if</span> <span class="nam">table</span><span class="op">.</span><span class="nam">retired_at</span> <span class="key">is</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t747" href="#t747">747</a></span><span class="t">            <span class="key">if</span> <span class="key">not</span> <span class="nam">table</span><span class="op">.</span><span class="nam">is_retired</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t748" href="#t748">748</a></span><span class="t">                <span class="key">await</span> <span class="nam">self</span><span class="op">.</span><span class="nam">retire_table</span><span class="op">(</span><span class="nam">table</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t749" href="#t749">749</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t750" href="#t750">750</a></span><span class="t">    <span class="key">async</span> <span class="key">def</span> <span class="nam">fetch_table</span><span class="op">(</span><span class="nam">self</span><span class="op">,</span> <span class="nam">created_table</span><span class="op">:</span> <span class="nam">CreatedTable</span><span class="op">)</span> <span class="op">-&gt;</span> <span class="nam">Table</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -945,7 +945,7 @@
             <a class="nav" href="z_fee804d4d06b79c7_pmm_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 21:47 +0000
+            created at 2026-09-25 22:39 +0000
         </p>
     </div>
 </footer>

@@ -325,7 +325,7 @@
 | app/extensions/db/engine.py                                                                                                         |        7 |        0 |        0 |        0 |    100% |           |
 | app/extensions/db/seed.py                                                                                                           |       52 |        0 |       16 |        0 |    100% |           |
 | app/extensions/deps.py                                                                                                              |      270 |        1 |       50 |        1 |     99% |697-\>702, 718 |
-| app/extensions/inventory.py                                                                                                         |      100 |        4 |       12 |        1 |     96% |84, 95, 284, 321 |
+| app/extensions/inventory.py                                                                                                         |      103 |        4 |       12 |        1 |     96% |92, 103, 292, 329 |
 | app/extensions/main.py                                                                                                              |      124 |       15 |       12 |        2 |     88% |163-165, 337-356, 376-\>385, 510-514 |
 | app/extensions/migrations/\_discovery.py                                                                                            |       41 |        2 |       20 |        3 |     92% |65, 97, 133-\>130 |
 | app/extensions/migrations/\_orphan\_heads.py                                                                                        |       37 |        0 |        8 |        0 |    100% |           |
@@ -383,10 +383,10 @@
 | app/extensions/sync/exceptions.py                                                                                                   |       32 |        0 |        0 |        0 |    100% |           |
 | app/extensions/sync/fields.py                                                                                                       |       15 |        0 |        0 |        0 |    100% |           |
 | app/extensions/sync/health.py                                                                                                       |       53 |        0 |        8 |        0 |    100% |           |
-| app/extensions/sync/models.py                                                                                                       |      408 |       38 |      104 |       16 |     87% |122-131, 145-147, 166, 172-\>174, 175-\>177, 260-\>277, 395-\>393, 484-485, 873-\>exit, 891, 905, 1012, 1026, 1048-1049, 1085-\>exit, 1136, 1149, 1173-1175, 1208-\>exit, 1253, 1323-\>exit, 1368, 1506-1508, 1618-1620, 1625-1631, 1635 |
+| app/extensions/sync/models.py                                                                                                       |      410 |       37 |      106 |       16 |     87% |122-131, 145-147, 166, 172-\>174, 175-\>177, 260-\>277, 400-\>394, 489-490, 878-\>exit, 896, 910, 1017, 1031, 1052-\>1053, 1090-\>exit, 1141, 1154, 1178-1180, 1213-\>exit, 1258, 1271, 1328-\>exit, 1373, 1511-1513, 1623-1625, 1630-1636, 1640 |
 | app/extensions/sync/syncers/mysql/payload.py                                                                                        |      176 |       47 |       54 |        5 |     70% |158-\>166, 242-246, 251-256, 269-275, 279-302, 356-\>372, 375, 396-404, 423 |
 | app/extensions/sync/syncers/mysql/syncer.py                                                                                         |      241 |        2 |       94 |        5 |     98% |111, 604-\>605, 716, 819-\>823, 821-\>820 |
-| app/extensions/sync/syncers/pmm.py                                                                                                  |      133 |        1 |       34 |        4 |     97% |107, 140-\>141, 430-\>437, 480-\>485 |
+| app/extensions/sync/syncers/pmm.py                                                                                                  |      135 |        1 |       36 |        4 |     97% |107, 140-\>141, 430-\>437, 480-\>485 |
 | app/extensions/sync/syncers/system\_facts/payload.py                                                                                |      243 |       19 |       82 |        9 |     91% |54-\>60, 152-153, 181, 227-229, 236, 238-\>234, 249-256, 310-312, 318-320, 344, 445-\>447, 447-\>449, 553, 564 |
 | app/extensions/sync/syncers/system\_facts/syncer.py                                                                                 |      118 |        3 |       28 |        3 |     96% |170, 245, 256-\>254, 351 |
 | app/extensions/tasks.py                                                                                                             |       31 |        0 |       12 |        2 |     95% |72-\>87, 76-\>79 |
@@ -533,7 +533,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33590** | **1916** | **8112** |  **676** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33597** | **1915** | **8116** |  **676** | **93%** |           |
 
 
 ## Setup coverage badge
