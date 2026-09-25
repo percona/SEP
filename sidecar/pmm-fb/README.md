@@ -80,7 +80,7 @@ whose Nomad `raw_exec` driver reports healthy.
 **Your own PMM server is a different matter, and the preview cannot use one.**
 Everything PMM Extensions relies on — the `PMM_ENABLE_EXTENSIONS` switch, the `/extensions` proxy, the
 PostgreSQL role, the secrets channel, the session exchange, the frontend — is
-still on percona/pmm's feature branch and in no released PMM. Point the
+on percona/pmm `main` at `7a20dfff5` but in no released PMM yet. Point the
 side-car at an existing PMM 3.x and none of it is there.
 
 Everything below this line is the developer reference for the harness itself.
