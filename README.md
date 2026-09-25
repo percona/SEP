@@ -519,8 +519,10 @@
 | app/tasks/migrations/versions/2026\_09\_09\_1930-f3b71c0d9a45\_encrypt\_execution\_request\_leaves.py                               |       10 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_14\_2243-b5e17f6b3bc7\_encrypt\_credential\_url\_setting\_overrides.py                      |       25 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_18\_1512-794928ff7799\_unmark\_secret\_setting\_overrides.py                                |       24 |        0 |        0 |        0 |    100% |           |
+| app/tasks/migrations/versions/2026\_09\_21\_2110-9c1d4f7a6b32\_constrain\_taskhistory\_status\_enum.py                              |       16 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_24\_1200-afa9bedb3b0b\_rename\_ciphertext\_marker.py                                        |       10 |        0 |        0 |        0 |    100% |           |
 | app/tasks/migrations/versions/2026\_09\_24\_1300-f0ee5b600303\_rewrite\_persisted\_extensions\_module\_paths.py                     |       36 |        0 |       16 |        1 |     98% |  99-\>106 |
+| app/tasks/migrations/versions/2026\_09\_24\_2005-2e932d05a0d9\_merge\_tasks\_migration\_heads.py                                    |       12 |        0 |        0 |        0 |    100% |           |
 | app/tasks/models.py                                                                                                                 |      382 |        4 |       82 |        6 |     98% |397, 695-\>698, 702, 719-\>732, 1356-\>1358, 1367-\>1369, 1392-1393 |
 | app/tasks/periodic/crud.py                                                                                                          |       31 |        0 |        0 |        0 |    100% |           |
 | app/tasks/periodic/deps.py                                                                                                          |       11 |        0 |        0 |        0 |    100% |           |
@@ -531,7 +533,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33503** | **1916** | **8108** |  **674** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33531** | **1916** | **8108** |  **674** | **93%** |           |
 
 
 ## Setup coverage badge
