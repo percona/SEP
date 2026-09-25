@@ -1,6 +1,6 @@
 # Repository Coverage
 
-[Full report](https://htmlpreview.github.io/?https://github.com/percona/SEP/blob/python-coverage-comment-action-data/htmlcov/index.html)
+[Full report](https://htmlpreview.github.io/?https://github.com/percona/pmm-extensions/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 | Name                                                                                                                                |    Stmts |     Miss |   Branch |   BrPart |   Cover |   Missing |
 |------------------------------------------------------------------------------------------------------------------------------------ | -------: | -------: | -------: | -------: | ------: | --------: |
@@ -60,7 +60,7 @@
 | app/core/settings\_override/alembic\_ops.py                                                                                         |      154 |       15 |       56 |       14 |     86% |93, 96, 98, 100-\>102, 120, 122, 158, 160, 174, 176, 217, 261, 306, 335, 361-362 |
 | app/core/settings\_override/api/export.py                                                                                           |        9 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/api/models.py                                                                                           |       24 |        0 |        0 |        0 |    100% |           |
-| app/core/settings\_override/api/routes.py                                                                                           |      320 |       39 |      100 |        8 |     86% |331, 470, 494, 624-631, 758, 787-797, 831-837, 845, 979, 1009, 1163, 1395-\>1432, 1405-1416, 1420-1431, 1433, 1487, 1489-1490, 1544, 1546, 1548 |
+| app/core/settings\_override/api/routes.py                                                                                           |      320 |       39 |      100 |        8 |     86% |331, 470, 494, 624-631, 758, 787-797, 831-837, 845, 979, 1009, 1163, 1395-\>1432, 1405-1416, 1420-1431, 1433, 1488, 1490-1491, 1545, 1547, 1549 |
 | app/core/settings\_override/cache.py                                                                                                |      127 |       13 |       46 |        6 |     87% |200-205, 218-223, 309, 372, 413, 417-424 |
 | app/core/settings\_override/constants.py                                                                                            |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/lifecycle.py                                                                                            |      123 |        1 |       34 |        1 |     99% |70-\>exit, 536 |
@@ -272,7 +272,7 @@
 | app/extensions/apps/om\_bootstrap/schema.py                                                                                         |        2 |        0 |        0 |        0 |    100% |           |
 | app/extensions/apps/om\_bootstrap/strategies/packages.py                                                                            |      142 |        2 |       24 |        2 |     98% |  434, 572 |
 | app/extensions/apps/om\_bootstrap/strategy.py                                                                                       |       72 |        3 |       16 |        3 |     93% |136, 138, 140 |
-| app/extensions/apps/om\_inventory/api\_routes.py                                                                                    |      124 |       25 |       28 |        2 |     73% |280, 291-292, 304-306, 324-325, 368, 381-383, 411-412, 429-430, 481-484, 535-\>534, 536, 543-544, 547-548 |
+| app/extensions/apps/om\_inventory/api\_routes.py                                                                                    |      124 |       25 |       28 |        2 |     73% |281, 292-293, 305-307, 325-326, 369, 382-384, 412-413, 430-431, 482-485, 536-\>535, 537, 544-545, 548-549 |
 | app/extensions/apps/om\_inventory/app.py                                                                                            |       12 |        1 |        2 |        1 |     86% |        59 |
 | app/extensions/apps/om\_inventory/app\_owned\_settings.py                                                                           |        3 |        0 |        0 |        0 |    100% |           |
 | app/extensions/apps/om\_inventory/celery.py                                                                                         |       11 |        2 |        0 |        0 |     82% |     51-54 |
@@ -538,20 +538,20 @@ Below are examples of the badges you can use in your main branch `README` file.
 
 ### Direct image
 
-[![Coverage badge](https://raw.githubusercontent.com/percona/SEP/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/percona/SEP/blob/python-coverage-comment-action-data/htmlcov/index.html)
+[![Coverage badge](https://raw.githubusercontent.com/percona/pmm-extensions/python-coverage-comment-action-data/badge.svg)](https://htmlpreview.github.io/?https://github.com/percona/pmm-extensions/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 This is the one to use if your repository is private or if you don't want to customize anything.
 
 ### [Shields.io](https://shields.io) Json Endpoint
 
-[![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/percona/SEP/python-coverage-comment-action-data/endpoint.json)](https://htmlpreview.github.io/?https://github.com/percona/SEP/blob/python-coverage-comment-action-data/htmlcov/index.html)
+[![Coverage badge](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/percona/pmm-extensions/python-coverage-comment-action-data/endpoint.json)](https://htmlpreview.github.io/?https://github.com/percona/pmm-extensions/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 Using this one will allow you to [customize](https://shields.io/endpoint) the look of your badge.
 It won't work with private repositories. It won't be refreshed more than once per five minutes.
 
 ### [Shields.io](https://shields.io) Dynamic Badge
 
-[![Coverage badge](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=coverage&query=%24.message&url=https%3A%2F%2Fraw.githubusercontent.com%2Fpercona%2FSEP%2Fpython-coverage-comment-action-data%2Fendpoint.json)](https://htmlpreview.github.io/?https://github.com/percona/SEP/blob/python-coverage-comment-action-data/htmlcov/index.html)
+[![Coverage badge](https://img.shields.io/badge/dynamic/json?color=brightgreen&label=coverage&query=%24.message&url=https%3A%2F%2Fraw.githubusercontent.com%2Fpercona%2Fpmm-extensions%2Fpython-coverage-comment-action-data%2Fendpoint.json)](https://htmlpreview.github.io/?https://github.com/percona/pmm-extensions/blob/python-coverage-comment-action-data/htmlcov/index.html)
 
 This one will always be the same color. It won't work for private repos. I'm not even sure why we included it.
 
