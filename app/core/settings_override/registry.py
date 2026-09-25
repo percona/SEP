@@ -1182,7 +1182,7 @@ def _stable_collection_sort_key(item: Any) -> tuple[Any, ...]:
     """
     if isinstance(item, BaseModel):
         field_parts: list[tuple[str, str]] = []
-        for name in sorted(item.model_fields):
+        for name in sorted(type(item).model_fields):
             value = getattr(item, name, None)
             unwrapped = _unwrap_secret_value(value)
             if unwrapped is not None:

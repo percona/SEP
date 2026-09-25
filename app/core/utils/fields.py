@@ -424,9 +424,10 @@ an operator sets it, rather than leaving every later request to fail.
 ARBITRARY_ARGS_SCHEMA = {"additionalProperties": True}
 """Advertise a free-form argument map for OpenAPI / TypeScript clients.
 
-Without this, a bare ``dict`` field emits ``type: object`` with no
-``additionalProperties``, which openapi-typescript turns into
-``Record<string, never>``. Pass as ``Field(json_schema_extra=...)`` on a plain
+openapi-typescript turns an object schema with no ``additionalProperties`` into
+``Record<string, never>``. Pydantic emits ``additionalProperties: true`` for a bare
+``dict`` field itself, so this states it explicitly rather than relying on that
+default. Pass as ``Field(json_schema_extra=...)`` on a plain
 Pydantic field, or nest under ``SQLField(..., schema_extra=...)`` for SQLModel.
 """
 
