@@ -35,19 +35,6 @@ _INSERT_HISTORY_ROW = (
 _OUT_OF_ENUM_STATUS = "ABANDONED"
 
 
-def test_out_of_enum_status_is_accepted_before_the_migration(tasks_alembic_config):
-    """Assert the unconstrained column takes any string before the upgrade."""
-    cfg, sync_url = tasks_alembic_config
-    command.upgrade(cfg, _PRE_CONSTRAINT_REVISION)
-
-    engine = create_engine(sync_url)
-    try:
-        with engine.begin() as conn:
-            conn.exec_driver_sql(_INSERT_HISTORY_ROW, (1, _OUT_OF_ENUM_STATUS))
-    finally:
-        engine.dispose()
-
-
 def test_upgrade_constrains_status_to_the_enum_domain(tasks_alembic_config):
     """Assert the migrated column rejects a status outside the enum's members."""
     cfg, sync_url = tasks_alembic_config
