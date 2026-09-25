@@ -396,7 +396,7 @@
 | app/inventory/constants.py                                                                                                          |       15 |        0 |        0 |        0 |    100% |           |
 | app/inventory/crud.py                                                                                                               |      386 |        6 |       72 |        3 |     98% |338, 506-508, 782-\>784, 969, 1297, 1821-\>exit |
 | app/inventory/db.py                                                                                                                 |        6 |        0 |        0 |        0 |    100% |           |
-| app/inventory/deps.py                                                                                                               |       63 |        9 |        4 |        0 |     81% |63-65, 272-274, 293-295 |
+| app/inventory/deps.py                                                                                                               |       72 |        9 |        4 |        0 |     83% |63-65, 328-330, 349-351 |
 | app/inventory/main.py                                                                                                               |       44 |        6 |        2 |        1 |     85% |52, 97-98, 136-140 |
 | app/inventory/migrations/env.py                                                                                                     |       36 |        5 |        4 |        2 |     82% |37-\>44, 65-77, 120 |
 | app/inventory/migrations/versions/2024\_09\_24\_1701-8e95b4982efb\_create\_inventory\_tables.py                                     |       36 |       13 |        0 |        0 |     64% |    96-108 |
@@ -428,9 +428,9 @@
 | app/inventory/migrations/versions/2026\_09\_24\_2016-c5a72c6cdbf4\_merge\_inventory\_migration\_heads.py                            |       12 |        0 |        0 |        0 |    100% |           |
 | app/inventory/models.py                                                                                                             |      160 |        0 |        8 |        0 |    100% |           |
 | app/inventory/routes/collection.py                                                                                                  |       23 |        7 |        6 |        1 |     59% |73-74, 76-80 |
-| app/inventory/routes/nodes.py                                                                                                       |       78 |        2 |        4 |        0 |     95% |  328, 330 |
+| app/inventory/routes/nodes.py                                                                                                       |       78 |        2 |        4 |        0 |     95% |  329, 331 |
 | app/inventory/routes/schemas.py                                                                                                     |       42 |        0 |        0 |        0 |    100% |           |
-| app/inventory/routes/services.py                                                                                                    |       74 |        3 |        6 |        0 |     91% |247, 249, 285 |
+| app/inventory/routes/services.py                                                                                                    |       74 |        3 |        6 |        0 |     91% |248, 250, 287 |
 | app/inventory/routes/tables.py                                                                                                      |       34 |        0 |        0 |        0 |    100% |           |
 | app/inventory/settings/routes.py                                                                                                    |       12 |        0 |        0 |        0 |    100% |           |
 | app/main.py                                                                                                                         |       91 |       23 |        6 |        1 |     73% |   264-318 |
@@ -533,7 +533,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33551** | **1917** | **8106** |  **676** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33560** | **1917** | **8106** |  **676** | **93%** |           |
 
 
 ## Setup coverage badge
