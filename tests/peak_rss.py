@@ -25,7 +25,10 @@ The controller then prints one line per process and the median over the
 workers, which is the figure to compare between runs. A test that runs
 ``pytest.main`` in-process starts a nested session that loads this conftest and
 finishes first, so only the last line per ``pid`` counts: the outermost session
-always finishes last. The controller's own peak is excluded
+always finishes last. A test that runs pytest in a subprocess passes the
+variable on, and ``ru_maxrss`` survives ``execve``, so that subprocess logs its
+spawning worker's peak as a ``controller``; the summary keeps only the
+``controller`` line written by the process printing it. The controller's own peak is excluded
 from the median because it collects and runs nothing under xdist.
 
 Lines are appended, never truncated, so point each run at a fresh path; a
@@ -71,6 +74,7 @@ def record_peak_rss(config: Any) -> None:
     """Append this process's peak RSS to the report file, when one is requested.
 
     :param config: The pytest config; an xdist worker's carries ``workerinput``.
+    :raises OSError: When the report file cannot be opened for appending.
     """
     path = _report_path()
     if path is None:
@@ -89,6 +93,8 @@ def peak_rss_summary() -> list[str]:
 
     :return: One line per process plus the median line, or an empty list when
         no report was requested.
+    :raises OSError: When the report file cannot be read.
+    :raises json.JSONDecodeError: When a line of the report is not JSON.
     """
     path = _report_path()
     if path is None:
@@ -96,6 +102,11 @@ def peak_rss_summary() -> list[str]:
     by_process: dict[object, dict[str, Any]] = {}
     for index, line in enumerate(path.read_text(encoding="utf-8").splitlines()):
         record = json.loads(line)
+        if (
+            record["worker"] == CONTROLLER
+            and record.get("pid", os.getpid()) != os.getpid()
+        ):
+            continue
         process = record.get("pid", index)
         by_process.pop(process, None)
         by_process[process] = record

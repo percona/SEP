@@ -16,6 +16,7 @@
 """Test the opt-in per-process peak-RSS report."""
 
 import json
+import os
 import resource
 import sys
 from pathlib import Path
@@ -160,6 +161,31 @@ def test_nested_session_in_the_same_process_is_superseded(
     summary = peak_rss_summary()
     assert [line.split(":")[0] for line in summary[:-1]] == ["gw3"]
     assert summary[-1].endswith("over 1 worker(s)")
+
+
+def test_controller_lines_from_other_processes_are_dropped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Drop a ``controller`` line a test's pytest subprocess wrote.
+
+    A subprocess inherits the report variable, and ``ru_maxrss`` survives
+    ``execve``, so its line repeats the spawning worker's peak under a pid that
+    is not the summarising controller's.
+    """
+    report = tmp_path / "rss.jsonl"
+    foreign_pid = os.getpid() + 1
+    report.write_text(
+        json.dumps({"worker": CONTROLLER, "pid": foreign_pid, "peak_rss_mb": 645})
+        + "\n"
+        + json.dumps({"worker": "gw0", "pid": foreign_pid + 1, "peak_rss_mb": 655})
+        + "\n"
+    )
+    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
+
+    assert peak_rss_summary() == [
+        "gw0: 655 MB",
+        "median worker peak RSS: 655 MB over 1 worker(s)",
+    ]
 
 
 def test_summary_without_workers_reports_no_median(
