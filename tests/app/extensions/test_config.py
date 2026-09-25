@@ -17,6 +17,8 @@
 
 import json
 import re
+from collections.abc import Callable
+from copy import deepcopy
 from datetime import timedelta
 from string import Template
 from typing import Any
@@ -753,6 +755,38 @@ class TestSyncerRetirementThresholdsOverConfig:
             )
 
 
+_MYSQL_SYNCER = "app.extensions.sync.syncers.mysql.syncer.MySQLSyncer"
+_PMM_SYNCER = "app.extensions.sync.syncers.pmm.PMMSyncer"
+
+
+def _build_via_model_validate(data: dict[str, Any]) -> ExtensionsSettings:
+    """Return settings built through ``ExtensionsSettings.model_validate``.
+
+    :param data: The settings payload to validate.
+    :return: The constructed settings object.
+    """
+    return ExtensionsSettings.model_validate(deepcopy(data))
+
+
+def _build_via_constructor(data: dict[str, Any]) -> ExtensionsSettings:
+    """Return settings built through the ordinary ``ExtensionsSettings`` constructor.
+
+    :param data: The settings payload to pass as keyword arguments.
+    :return: The constructed settings object.
+    """
+    return ExtensionsSettings(
+        **deepcopy(data),
+        _env_file=None,  # ty: ignore[unknown-argument]
+    )
+
+
+_BUILDERS = pytest.mark.parametrize(
+    "build",
+    [_build_via_model_validate, _build_via_constructor],
+    ids=["model_validate", "constructor"],
+)
+
+
 class TestSyncerExtrasValidatedAtLoad:
     """Reject an unusable syncer threshold at settings load, not per request.
 
@@ -762,8 +796,6 @@ class TestSyncerExtrasValidatedAtLoad:
     typed field once a syncer is constructed, which for the request-scoped
     ``get_syncers`` dependency means a fresh error on every sync trigger.
     """
-
-    _PMM = "app.extensions.sync.syncers.pmm.PMMSyncer"
 
     @staticmethod
     def _syncers_env(*syncers: str) -> str:
@@ -778,8 +810,8 @@ class TestSyncerExtrasValidatedAtLoad:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Reject a bare-integer-seconds ``STALE_RUN_AFTER`` from the env leaf form."""
-        monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(self._PMM))
         monkeypatch.setenv("EXTENSIONS__SYNCER_EXTRA_KWARGS__STALE_RUN_AFTER", "60")
+        monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(_PMM_SYNCER))
 
         with pytest.raises(ValidationError, match="STALE_RUN_AFTER") as excinfo:
             ExtensionsSettings(_env_file=None)  # ty: ignore[unknown-argument]
@@ -802,7 +834,7 @@ class TestSyncerExtrasValidatedAtLoad:
         self, field: str, value: str, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Reject a threshold below its floor from the environment leaf form."""
-        monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(self._PMM))
+        monkeypatch.setenv("EXTENSIONS__SYNCERS", self._syncers_env(_PMM_SYNCER))
         monkeypatch.setenv(f"EXTENSIONS__SYNCER_EXTRA_KWARGS__{field}", value)
 
         with pytest.raises(ValidationError, match=field):
@@ -831,7 +863,7 @@ class TestSyncerExtrasValidatedAtLoad:
         """
         with pytest.raises(ValidationError, match=field):
             ExtensionsSettings.model_validate(
-                {"SYNCERS": [{"SYNCER": self._PMM, field: value}]}
+                {"SYNCERS": [{"SYNCER": _PMM_SYNCER, field: value}]}
             )
 
     @pytest.mark.parametrize(
@@ -843,7 +875,7 @@ class TestSyncerExtrasValidatedAtLoad:
         """Reject a non-positive task timing value from the JSON environment form."""
         monkeypatch.setenv(
             "EXTENSIONS__SYNCERS",
-            json.dumps([{"SYNCER": self._PMM, field: 0}]),
+            json.dumps([{"SYNCER": _PMM_SYNCER, field: 0}]),
         )
 
         with pytest.raises(ValidationError, match=field):
@@ -858,7 +890,7 @@ class TestSyncerExtrasValidatedAtLoad:
         with pytest.raises(ValidationError) as excinfo:
             ExtensionsSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
                 }
             )
@@ -872,7 +904,7 @@ class TestSyncerExtrasValidatedAtLoad:
         with pytest.raises(ValidationError) as excinfo:
             ExtensionsSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": 0},
                 }
             )
@@ -887,31 +919,37 @@ class TestSyncerExtrasValidatedAtLoad:
         """
         with pytest.raises(ValidationError) as excinfo:
             ExtensionsSettings.model_validate(
-                {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": "abc"}]}
+                {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": "abc"}]}
             )
 
         assert "If this came from" not in str(excinfo.value)
 
+    @_BUILDERS
     @pytest.mark.parametrize(
         "value", ["60", "60.5", "-60", "abc", "", 0, -1, [60], {"seconds": 60}]
     )
-    def test_unusable_stale_run_after_is_rejected_at_load(self, value: Any) -> None:
+    def test_unusable_stale_run_after_is_rejected_at_load(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings], value: Any
+    ) -> None:
         """Reject every shape ``stale_run_after`` cannot be built from."""
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
-            ExtensionsSettings.model_validate(
+            build(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": value},
                 }
             )
 
+    @_BUILDERS
     @pytest.mark.parametrize("value", ["0", "1", 0, 1, "abc", 2.5, ""])
-    def test_unusable_grace_generations_is_rejected_at_load(self, value: Any) -> None:
+    def test_unusable_grace_generations_is_rejected_at_load(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings], value: Any
+    ) -> None:
         """Reject every shape ``missing_grace_generations`` cannot be built from."""
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
-            ExtensionsSettings.model_validate(
+            build(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": value},
                 }
             )
@@ -931,7 +969,7 @@ class TestSyncerExtrasValidatedAtLoad:
     ) -> None:
         """Keep every form pydantic reads as a duration working end to end."""
         settings = ExtensionsSettings.model_validate(
-            {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": value}]}
+            {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": value}]}
         )
         mocker.patch.object(extensions_settings, "SYNCERS", settings.SYNCERS)
 
@@ -952,7 +990,7 @@ class TestSyncerExtrasValidatedAtLoad:
             json.dumps(
                 [
                     {
-                        "SYNCER": self._PMM,
+                        "SYNCER": _PMM_SYNCER,
                         "STALE_RUN_AFTER": 60,
                         "MISSING_GRACE_GENERATIONS": grace,
                     }
@@ -971,60 +1009,28 @@ class TestSyncerExtrasValidatedAtLoad:
         assert isinstance(syncer, PMMSyncer)
         assert syncer.missing_grace_generations == grace
 
-    def test_null_threshold_falls_back_to_the_field_default(
-        self, mocker: MockerFixture
-    ) -> None:
-        """Read an explicit ``null`` as "unset" rather than refusing to load."""
-        settings = ExtensionsSettings.model_validate(
-            {"SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": None}]}
-        )
-        mocker.patch.object(extensions_settings, "SYNCERS", settings.SYNCERS)
-
-        syncers = get_syncers(
-            inventory_api=MagicMock(spec=RemoteAPI),
-            tasks_api=MagicMock(spec=RemoteAPI),
-        )
-
-        assert syncers[0].stale_run_after == timedelta(hours=1)
-
-    def test_extra_kwargs_win_the_merge_and_are_still_checked(self) -> None:
-        """Check the merged value, not the per-syncer one the extras displace."""
-        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
-            ExtensionsSettings.model_validate(
-                {
-                    "SYNCERS": [{"SYNCER": self._PMM, "STALE_RUN_AFTER": 3600}],
-                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
-                }
-            )
-
     def test_error_names_the_offending_syncer(self) -> None:
         """Point the operator at the entry to fix when several are configured."""
-        mysql = "app.extensions.sync.syncers.mysql.syncer.MySQLSyncer"
-        with pytest.raises(ValidationError, match=re.escape(mysql)):
+        with pytest.raises(ValidationError, match=re.escape(_MYSQL_SYNCER)):
             ExtensionsSettings.model_validate(
                 {
                     "SYNCERS": [
-                        {"SYNCER": self._PMM, "STALE_RUN_AFTER": 3600},
-                        {"SYNCER": mysql, "STALE_RUN_AFTER": "60"},
+                        {"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": 3600},
+                        {"SYNCER": _MYSQL_SYNCER, "STALE_RUN_AFTER": "60"},
                     ]
                 }
             )
 
     def test_unconstrained_extras_are_forwarded_untouched(self) -> None:
-        """Keep the check a floor on known thresholds, not an allowlist of keys.
-
-        Built through the constructor rather than ``model_validate``, which runs the
-        merge twice and so concatenates a list-valued extra with itself.
-        """
-        settings = ExtensionsSettings(
-            SYNCERS=[
-                {"SYNCER": "app.extensions.sync.syncers.mysql.syncer.MySQLSyncer"}
-            ],
-            SYNCER_EXTRA_KWARGS={
-                "IGNORE_SCHEMAS": ["sys"],
-                "DEFAULT_EXECUTOR_HOST": "node-1",
-            },
-            _env_file=None,  # ty: ignore[unknown-argument]
+        """Keep the check a floor on known thresholds, not an allowlist of keys."""
+        settings = ExtensionsSettings.model_validate(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {
+                    "IGNORE_SCHEMAS": ["sys"],
+                    "DEFAULT_EXECUTOR_HOST": "node-1",
+                },
+            }
         )
 
         dumped = settings.SYNCERS[0].model_dump()
@@ -1037,7 +1043,7 @@ class TestSyncerExtrasValidatedAtLoad:
         with pytest.raises(ValidationError, match="(?i)stale_run_after"):
             ExtensionsSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": self._PMM}],
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {key: "60"},
                 }
             )
@@ -1050,29 +1056,231 @@ class TestSyncerExtrasValidatedAtLoad:
         entry that would silently drop it. A usable one still loads, and is still
         ignored.
         """
-        mysql = "app.extensions.sync.syncers.mysql.syncer.MySQLSyncer"
         with pytest.raises(ValidationError, match="(?i)missing_grace_generations"):
             ExtensionsSettings.model_validate(
                 {
-                    "SYNCERS": [{"SYNCER": mysql}],
+                    "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
                     "SYNCER_EXTRA_KWARGS": {"MISSING_GRACE_GENERATIONS": 0},
                 }
             )
 
-    def test_unusable_extra_loads_when_no_syncer_is_configured(self) -> None:
+    @_BUILDERS
+    def test_extra_kwargs_win_the_merge_and_are_still_checked(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Check the merged threshold, not the per-entry one the extras displace."""
+        with pytest.raises(ValidationError, match="(?i)stale_run_after"):
+            build(
+                {
+                    "SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": 3600}],
+                    "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"},
+                }
+            )
+
+    @_BUILDERS
+    def test_removed_pmm_key_on_the_extras_is_still_rejected(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Refuse a dead per-syncer ``pmm`` override carried by the extras."""
+        with pytest.raises(ValidationError, match="(?i)pmm"):
+            build(
+                {
+                    "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                    "SYNCER_EXTRA_KWARGS": {"PMM": {"URL": "http://pmm"}},
+                }
+            )
+
+    @_BUILDERS
+    def test_unusable_extra_loads_when_no_syncer_is_configured(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
         """Leave a deployment that runs no syncer alone.
 
         The check walks configured syncers, so with none there is nothing an extra
         can reach and nothing to refuse.
         """
-        settings = ExtensionsSettings.model_validate(
+        settings = build(
             {"SYNCERS": [], "SYNCER_EXTRA_KWARGS": {"STALE_RUN_AFTER": "60"}}
         )
 
         assert settings.SYNCERS == []
+
+    @_BUILDERS
+    def test_null_threshold_falls_back_to_the_field_default(
+        self,
+        build: Callable[[dict[str, Any]], ExtensionsSettings],
+        mocker: MockerFixture,
+    ) -> None:
+        """Read an explicit ``null`` as "unset" rather than refusing to load."""
+        settings = build(
+            {"SYNCERS": [{"SYNCER": _PMM_SYNCER, "STALE_RUN_AFTER": None}]}
+        )
+        mocker.patch.object(extensions_settings, "SYNCERS", settings.SYNCERS)
+
+        syncers = get_syncers(
+            inventory_api=MagicMock(spec=RemoteAPI),
+            tasks_api=MagicMock(spec=RemoteAPI),
+        )
+
+        assert syncers[0].stale_run_after == timedelta(hours=1)
 
     @pytest.mark.parametrize("field", ["SYNCERS", "SYNCER_EXTRA_KWARGS"])
     def test_syncer_settings_are_not_database_overridable(self, field: str) -> None:
         """Keep the load-time check unbypassable by a DB-backed override."""
         assert not is_hot_reloadable(ExtensionsSettings, field)
         assert not is_nested_overridable_parent(ExtensionsSettings, field)
+
+
+class TestSyncerExtrasMergeParity:
+    """Merge ``SYNCER_EXTRA_KWARGS`` into each syncer exactly once, however built.
+
+    ``model_validate`` and the ordinary constructor have to agree: a list-valued
+    extra reaches a syncer once on either path, never concatenated with itself.
+    """
+
+    @_BUILDERS
+    def test_list_extra_is_forwarded_once(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Forward a list-valued extra without duplicating its entries."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+
+    @_BUILDERS
+    def test_list_extra_precedes_the_syncers_own_entries(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Keep the overlay ahead of the entry's own list, prepended only once."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys", "mine"]
+
+    def test_both_construction_paths_agree(self) -> None:
+        """Produce identical syncers whichever construction path was taken."""
+        data = {
+            "SYNCERS": [
+                {"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]},
+                {"SYNCER": _PMM_SYNCER},
+            ],
+            "SYNCER_EXTRA_KWARGS": {
+                "IGNORE_SCHEMAS": ["sys"],
+                "DEFAULT_EXECUTOR_HOST": "node-1",
+            },
+        }
+
+        validated = _build_via_model_validate(data)
+        constructed = _build_via_constructor(data)
+
+        assert [syncer.model_dump() for syncer in validated.SYNCERS] == [
+            syncer.model_dump() for syncer in constructed.SYNCERS
+        ]
+
+    @_BUILDERS
+    def test_scalar_extra_reaches_every_syncer(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Merge a scalar extra into each configured syncer."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}, {"SYNCER": _PMM_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"DEFAULT_EXECUTOR_HOST": "node-1"},
+            }
+        )
+
+        assert [s.model_dump()["default_executor_host"] for s in settings.SYNCERS] == [
+            "node-1",
+            "node-1",
+        ]
+
+    @_BUILDERS
+    def test_nested_list_extra_is_merged_once(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Merge a list nested inside a mapping extra exactly once."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "OPTS": {"schemas": ["mine"]}}],
+                "SYNCER_EXTRA_KWARGS": {"OPTS": {"schemas": ["sys"]}},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["opts"] == {"schemas": ["sys", "mine"]}
+
+    @_BUILDERS
+    def test_empty_overlay_clears_the_syncers_list(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Read an empty list overlay as "drop the entry's own value"."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": []},
+            }
+        )
+
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == []
+
+    @_BUILDERS
+    def test_repeated_syncer_entry_collapses_to_one(
+        self, build: Callable[[dict[str, Any]], ExtensionsSettings]
+    ) -> None:
+        """Keep one entry per syncer path, still carrying the extras once."""
+        settings = build(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}, {"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+
+        assert len(settings.SYNCERS) == 1
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+
+    def test_re_merging_reads_the_syncers_currently_configured(self) -> None:
+        """Merge over whatever ``SYNCERS`` holds now, and still only once."""
+        settings = _build_via_constructor(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER, "IGNORE_SCHEMAS": ["mine"]}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+        merged_once = [syncer.model_dump() for syncer in settings.SYNCERS]
+
+        settings.add_syncer_extra_kwargs()  # ty: ignore[call-non-callable]
+
+        assert [syncer.model_dump() for syncer in settings.SYNCERS] == merged_once
+
+        settings.SYNCERS = [SyncOptions(syncer=_PMM_SYNCER)]
+        settings.add_syncer_extra_kwargs()  # ty: ignore[call-non-callable]
+
+        assert settings.SYNCERS[0].syncer == _PMM_SYNCER
+        assert settings.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+
+    def test_each_settings_object_keeps_its_own_syncers(self) -> None:
+        """Keep one object's merge out of another's, whatever is cached per instance."""
+        first = _build_via_model_validate(
+            {
+                "SYNCERS": [{"SYNCER": _MYSQL_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["sys"]},
+            }
+        )
+        second = _build_via_model_validate(
+            {
+                "SYNCERS": [{"SYNCER": _PMM_SYNCER}],
+                "SYNCER_EXTRA_KWARGS": {"IGNORE_SCHEMAS": ["other"]},
+            }
+        )
+
+        assert first.SYNCERS[0].model_dump()["ignore_schemas"] == ["sys"]
+        assert second.SYNCERS[0].model_dump()["ignore_schemas"] == ["other"]
+        assert first.SYNCERS[0].syncer == _MYSQL_SYNCER
