@@ -434,6 +434,16 @@ export interface paths {
     /**
      * List Services By Node
      * @description List Services by Node.
+     *
+     *     :param session: The async database session.
+     *     :param node: The node addressed by the path, resolved within the request's
+     *         retirement scope.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :param list_query: The resolved sort/search produced at the request
+     *         boundary.
+     *     :param manager: The service manager the request's retirement scope selected.
+     *     :param service_type: Restrict the listing to services of this type.
+     *     :return: A paginated response of the node's services.
      */
     get: operations['nodes_list_services_by_node_nodes__node_id__services__get'];
     put?: never;
@@ -629,6 +639,15 @@ export interface paths {
     /**
      * List Tables By Schema
      * @description List Tables by Schema.
+     *
+     *     :param session: The async database session.
+     *     :param schema: The schema addressed by the path, resolved within the
+     *         request's retirement scope.
+     *     :param pagination: Validated offset/limit query parameters.
+     *     :param list_query: The resolved sort/search produced at the request
+     *         boundary.
+     *     :param manager: The table manager the request's retirement scope selected.
+     *     :return: A paginated response of the schema's tables.
      */
     get: operations['schemas_list_tables_by_schema_schemas__schema_id__tables__get'];
     put?: never;
@@ -833,7 +852,8 @@ export interface paths {
      *     is set, otherwise return ``SchemaCompactResponse`` (without tables).
      *
      *     :param session: The async database session.
-     *     :param service: The resolved service dependency.
+     *     :param service: The service addressed by the path, resolved within the
+     *         request's retirement scope.
      *     :param pagination: Validated offset/limit query parameters.
      *     :param list_query: The resolved sort/search produced at the request
      *         boundary.
@@ -3070,13 +3090,13 @@ export interface operations {
     parameters: {
       query?: {
         service_type?: components['schemas']['ServiceTypeEnum'] | null;
+        include_retired?: boolean;
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
         sort?: 'created_at' | '-created_at' | 'name' | '-name';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
-        include_retired?: boolean;
       };
       header?: never;
       path: {
@@ -3439,13 +3459,13 @@ export interface operations {
   schemas_list_tables_by_schema_schemas__schema_id__tables__get: {
     parameters: {
       query?: {
+        include_retired?: boolean;
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
         sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'schema_id' | '-schema_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
-        include_retired?: boolean;
       };
       header?: never;
       path: {
@@ -3778,13 +3798,13 @@ export interface operations {
     parameters: {
       query?: {
         include_tables?: string | null;
+        include_retired?: boolean;
         offset?: number;
         limit?: number;
         /** @description Sort key; prefix with '-' for descending order. */
         sort?: 'created_at' | '-created_at' | 'name' | '-name' | 'service_id' | '-service_id';
         /** @description Case-insensitive search across the searchable columns. */
         search?: string | null;
-        include_retired?: boolean;
       };
       header?: never;
       path: {
