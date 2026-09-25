@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_8f17e9e95c62a341_reconcile_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 20:02 +0000
+            created at 2026-09-25 20:11 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -136,7 +136,7 @@
     <p class="run run2"><span class="n"><a id="t52" href="#t52">52</a></span><span class="t">    <span class="nam">HTTPNotFoundException</span><span class="op">,</span>&nbsp;</span><span class="r"></span></p>
     <p class="run run2"><span class="n"><a id="t53" href="#t53">53</a></span><span class="t"><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t54" href="#t54">54</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">requests</span> <span class="key">import</span> <span class="nam">as_json_object</span><span class="op">,</span> <span class="nam">RemoteAPI</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">security</span> <span class="key">import</span> <span class="nam">require_internal_token</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t55" href="#t55">55</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">security</span> <span class="key">import</span> <span class="nam">get_internal_token</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t56" href="#t56">56</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">core</span><span class="op">.</span><span class="nam">utils</span><span class="op">.</span><span class="nam">fields</span> <span class="key">import</span> <span class="nam">NonEmptyStr</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t57" href="#t57">57</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">extensions</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">atw</span><span class="op">.</span><span class="nam">recorder</span> <span class="key">import</span> <span class="nam">RUN_RESULT_RECORDER</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t58" href="#t58">58</a></span><span class="t"><span class="key">from</span> <span class="nam">app</span><span class="op">.</span><span class="nam">extensions</span><span class="op">.</span><span class="nam">apps</span><span class="op">.</span><span class="nam">atw</span><span class="op">.</span><span class="nam">send</span> <span class="key">import</span> <span class="nam">get_tasks_api</span>&nbsp;</span><span class="r"></span></p>
@@ -504,15 +504,13 @@
     <p class="pln"><span class="n"><a id="t420" href="#t420">420</a></span><span class="t"><span class="str">        decision to the caller: the batch route degrades the whole batch to unwrapped</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t421" href="#t421">421</a></span><span class="t"><span class="str">        dispatch rather than splitting one request across two policies.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t422" href="#t422">422</a></span><span class="t"><span class="str">    :raises OSError: Propagated from the Tasks API when the transport itself fails.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t423" href="#t423">423</a></span><span class="t"><span class="str">    :raises RuntimeError: Propagated from ``require_internal_token`` when no internal</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t424" href="#t424">424</a></span><span class="t"><span class="str">        token is configured.</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t425" href="#t425">425</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t426" href="#t426">426</a></span><span class="t">    <span class="nam">client</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">get_tasks_api</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t427" href="#t427">427</a></span><span class="t">    <span class="key">with</span> <span class="nam">client</span><span class="op">.</span><span class="nam">auth</span><span class="op">(</span><span class="nam">require_internal_token</span><span class="op">(</span><span class="op">)</span><span class="op">)</span> <span class="key">as</span> <span class="nam">tasks_api</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t428" href="#t428">428</a></span><span class="t">        <span class="key">return</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t429" href="#t429">429</a></span><span class="t">            <span class="nam">root_task_name</span><span class="op">:</span> <span class="key">await</span> <span class="nam">_resolve_one</span><span class="op">(</span><span class="nam">tasks_api</span><span class="op">,</span> <span class="nam">root_task_name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t430" href="#t430">430</a></span><span class="t">            <span class="key">for</span> <span class="nam">root_task_name</span> <span class="key">in</span> <span class="nam">dict</span><span class="op">.</span><span class="nam">fromkeys</span><span class="op">(</span><span class="nam">root_task_names</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run run2"><span class="n"><a id="t431" href="#t431">431</a></span><span class="t">        <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t423" href="#t423">423</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t424" href="#t424">424</a></span><span class="t">    <span class="nam">client</span> <span class="op">=</span> <span class="key">await</span> <span class="nam">get_tasks_api</span><span class="op">(</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t425" href="#t425">425</a></span><span class="t">    <span class="key">with</span> <span class="nam">client</span><span class="op">.</span><span class="nam">auth</span><span class="op">(</span><span class="nam">get_internal_token</span><span class="op">(</span><span class="op">)</span><span class="op">)</span> <span class="key">as</span> <span class="nam">tasks_api</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t426" href="#t426">426</a></span><span class="t">        <span class="key">return</span> <span class="op">{</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t427" href="#t427">427</a></span><span class="t">            <span class="nam">root_task_name</span><span class="op">:</span> <span class="key">await</span> <span class="nam">_resolve_one</span><span class="op">(</span><span class="nam">tasks_api</span><span class="op">,</span> <span class="nam">root_task_name</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t428" href="#t428">428</a></span><span class="t">            <span class="key">for</span> <span class="nam">root_task_name</span> <span class="key">in</span> <span class="nam">dict</span><span class="op">.</span><span class="nam">fromkeys</span><span class="op">(</span><span class="nam">root_task_names</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run run2"><span class="n"><a id="t429" href="#t429">429</a></span><span class="t">        <span class="op">}</span>&nbsp;</span><span class="r"></span></p>
 </main>
 <footer>
     <div class="content">
@@ -522,7 +520,7 @@
             <a class="nav" href="z_8f17e9e95c62a341_reconcile_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 20:02 +0000
+            created at 2026-09-25 20:11 +0000
         </p>
     </div>
 </footer>
