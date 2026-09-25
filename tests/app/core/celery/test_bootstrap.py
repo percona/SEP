@@ -451,8 +451,8 @@ def test_the_migrate_target_bootstraps_the_beat_tables():
     first ``--start-celery`` against a freshly migrated store otherwise waits out
     the API readiness timeout on tables only beat itself would create.
 
-    This asserts the recipe's text; no test runs the target, so a shell-level
-    fault in the line would still reach CI.
+    This fast smoke check asserts the recipe's text; the PostgreSQL tests in
+    ``tests/app/migrations/test_make_migrate.py`` exercise its shell-level wiring.
     """
     recipe = makefile_recipe("migrate")
     upgrades = [index for index, line in enumerate(recipe) if "alembic --name" in line]
