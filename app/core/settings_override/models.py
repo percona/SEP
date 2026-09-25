@@ -43,7 +43,6 @@ if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
     from sqlalchemy.engine.interfaces import Dialect
     from sqlalchemy.orm import Mapper
-    from sqlalchemy.orm.attributes import AttributeEventToken
 
 #: Columns whose change on an already-persisted row must be accompanied by a
 #: matching ``updated_by`` restamp in the same flush. Excludes ``updated_at``:
@@ -51,6 +50,11 @@ if TYPE_CHECKING:
 #: content in its own right, so it carries no independent restamp
 #: requirement.
 _ACTOR_TRACKED_COLUMNS = ("value", "is_active", "key", "setting_class")
+
+#: ``InstanceState.info`` key :meth:`SettingOverride.stamp` sets. Lives on the
+#: instance state rather than the model so it never reaches ``model_dump`` and
+#: is not carried over by ``session.merge()``.
+_STAMPED_INFO_KEY = "settings_override_stamped"
 
 #: Acronym-aware CamelCase split: ``PMMSettings`` -> ``PMM_Settings``,
 #: ``HealthReportSettings`` -> ``Health_Report_Settings``.
@@ -210,6 +214,42 @@ class SettingOverride(BaseSQLModel, table=True):
             return value.name
         return value
 
+    def stamp(self, actor: str) -> None:
+        """Attribute this row's pending change to ``actor``.
+
+        The only way to restamp the actor who already wrote the row's current
+        value (an admin saving the same setting twice in a row), because a plain
+        ``updated_by`` assignment of the stored value is indistinguishable from
+        one that copies the stale actor back from the loaded row, and
+        :func:`_reject_unstamped_update` rejects the latter.
+
+        Also marks the row dirty, so a stamp with nothing else changed still
+        emits an UPDATE and consumes the stamp instead of leaving it to vouch
+        for a later, unrelated flush.
+
+        :param actor: The username making the change.
+        """
+        state = _instance_state(self)
+        self.updated_by = actor
+        state.info[_STAMPED_INFO_KEY] = True
+        # An unloaded attribute (after expiry) already records the assignment
+        # as a change, and ``flag_modified`` raises on it.
+        if "updated_by" in state.dict:
+            flag_modified(self, "updated_by")
+
+
+def _instance_state(instance: SettingOverride) -> InstanceState:
+    """Return the SQLAlchemy instance state of ``instance``.
+
+    ty doesn't run SQLAlchemy's mypy plugin, so it can't see mapped classes as
+    ``Inspectable`` and types ``inspect()``'s return as ``Any | None``; the cast
+    restores the runtime-guaranteed ``InstanceState``.
+
+    :param instance: The ``SettingOverride`` to inspect.
+    :return: Its instance state.
+    """
+    return cast(InstanceState, inspect(instance))
+
 
 class StaleActorUpdateError(RuntimeError):
     """Raise when a ``SettingOverride`` update changes a tracked column without restamping ``updated_by``.
@@ -218,50 +258,9 @@ class StaleActorUpdateError(RuntimeError):
     convention :func:`_reject_unstamped_update` enforces. Not an
     :class:`~sqlalchemy.exc.DatabaseError`, so it is never mistaken for one by
     :meth:`~app.core.db.crud.BaseSQLModelManager.save`, which only translates
-    that family into an HTTP response -- this error propagates unchanged
+    that family into an HTTP response. This error propagates unchanged
     through the manager instead.
     """
-
-
-@event.listens_for(SettingOverride.updated_by, "set")
-def _mark_updated_by_touched(
-    target: SettingOverride,
-    value: Any,  # noqa: ARG001
-    oldvalue: Any,  # noqa: ARG001
-    initiator: AttributeEventToken,  # noqa: ARG001
-) -> None:
-    """Force every ``updated_by`` assignment to register as a history change.
-
-    SQLAlchemy classifies a scalar assignment as unchanged whenever the new
-    value equals the value already loaded, which is indistinguishable from
-    never assigning it at all. Left alone, restamping ``updated_by`` to the
-    same actor who wrote the row's current value -- an admin saving the same
-    setting twice in a row, the common case -- would read as untouched to
-    :func:`_reject_unstamped_update` and be rejected despite being exactly
-    the restamp that guard requires.
-
-    A consequence: an ``updated_by``-only assignment of the stored value still
-    emits an UPDATE and advances ``updated_at``, which is the re-save
-    semantics ``_stage_and_commit_overrides`` already relies on.
-
-    :param target: The ``SettingOverride`` instance being assigned to.
-    :param value: The value being assigned (unused).
-    :param oldvalue: The previously loaded value, or a SQLAlchemy sentinel
-        when none was loaded yet (unused).
-    :param initiator: The event token describing the originating assignment
-        (unused).
-    """
-    # An absent attribute -- first assignment during construction, or unloaded
-    # by expiry -- already records any assignment as a change, and
-    # ``flag_modified`` raises on it.
-    #
-    # ty doesn't run SQLAlchemy's mypy plugin, so it can't see mapped classes
-    # as ``Inspectable`` and types ``inspect()``'s return as ``Any | None``;
-    # cast to the runtime-guaranteed ``InstanceState``.
-    state = cast(InstanceState, inspect(target))
-    if "updated_by" not in state.dict:
-        return
-    flag_modified(target, "updated_by")
 
 
 @event.listens_for(SettingOverride, "before_update")
@@ -277,10 +276,13 @@ def _reject_unstamped_update(
     rejected. Also fires for every dirty instance even when no mapped column
     actually changed, so a genuine change is confirmed per column via
     :class:`~sqlalchemy.orm.attributes.History` rather than inferred from the
-    event alone. Relies on :func:`_mark_updated_by_touched` to make a
-    same-value restamp of ``updated_by`` visible as a change in that history.
-    A restamp to ``None`` does not count: it leaves the change attributed to
-    nobody.
+    event alone.
+
+    A restamp counts when :meth:`SettingOverride.stamp` was called since the
+    last flush, or when ``updated_by`` changed to a different, non-``None``
+    actor. Assigning the stored actor back does not count: it is what a patch
+    built from the loaded row does, and it leaves the change attributed to
+    whoever wrote the previous value.
 
     :param mapper: The mapper for ``target`` (unused).
     :param connection: The connection the flush runs on (unused).
@@ -288,15 +290,15 @@ def _reject_unstamped_update(
     :raises StaleActorUpdateError: When a tracked column changed but
         ``updated_by`` was not restamped to an actor in the same flush.
     """
-    # See the note in ``_mark_updated_by_touched`` above on why ``inspect()``
-    # is cast here rather than used as-is under ty.
-    state = cast(InstanceState, inspect(target))
+    state = _instance_state(target)
+    # Consumed on read so one stamp vouches for exactly one flush, even if this
+    # one is rejected or rolled back.
+    stamped = state.info.pop(_STAMPED_INFO_KEY, False)
     tracked_changed = any(
         state.attrs[column].history.has_changes() for column in _ACTOR_TRACKED_COLUMNS
     )
-    restamped = (
-        state.attrs["updated_by"].history.has_changes()
-        and target.updated_by is not None
+    restamped = target.updated_by is not None and (
+        stamped or state.attrs["updated_by"].history.has_changes()
     )
     if tracked_changed and not restamped:
         raise StaleActorUpdateError(
