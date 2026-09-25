@@ -157,7 +157,8 @@ class CompositeUniqueModel(BaseSQLModel, table=True):
     :param external_id: The identifier the origin system assigns.
     :param source: The origin system the row came from.
     :param discriminator: The extra column that narrows the index, standing in for
-        inventory's retirement key.
+        inventory's retirement key. Excluded from serialization the same way
+        ``retirement_key`` is.
     :param label: A value outside every unique index.
     """
 
@@ -174,7 +175,7 @@ class CompositeUniqueModel(BaseSQLModel, table=True):
 
     external_id: str
     source: str
-    discriminator: int = ACTIVE_DISCRIMINATOR
+    discriminator: int = SQLField(default=ACTIVE_DISCRIMINATOR, exclude=True)
     label: str = "default"
 
 
@@ -1254,13 +1255,16 @@ class TestSaveUniqueViolation:
         )
         row.external_id = "ext-a"
 
-        # Leading columns only: what this pins is which index gets reported, not the
-        # exact tail of the wording.
         with pytest.raises(
             HTTPConflictException,
-            match="CompositeUniqueModel with the same external_id, source",
-        ):
+            match=(
+                r"^CompositeUniqueModel with the same external_id, source "
+                r"already exists\.$"
+            ),
+        ) as raised:
             await CompositeUniqueManager.save(session, row)
+
+        assert "discriminator" not in str(raised.value)
 
     @pytest.mark.asyncio
     async def test_index_collision_on_falsy_key_member_raises_conflict(
