@@ -756,7 +756,10 @@ def _build_via_constructor(data: dict[str, Any]) -> ExtensionsSettings:
     :param data: The settings payload to pass as keyword arguments.
     :return: The constructed settings object.
     """
-    return ExtensionsSettings(**deepcopy(data), _env_file=None)
+    return ExtensionsSettings(
+        **deepcopy(data),
+        _env_file=None,  # ty: ignore[unknown-argument]
+    )
 
 
 _BUILDERS = pytest.mark.parametrize(

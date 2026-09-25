@@ -735,7 +735,6 @@ class ExtensionsSettings(BaseYamlAppSettings):
         advanced=True,
     )
 
-    # Snapshots for add_syncer_extra_kwargs, which can run more than once per instance.
     _pre_merge_syncers: list[dict[str, Any]] = PrivateAttr(default_factory=list)
     _merged_syncers: list[dict[str, Any]] = PrivateAttr(default_factory=list)
 
@@ -857,8 +856,8 @@ class ExtensionsSettings(BaseYamlAppSettings):
         Merge additional keyword arguments from ``SYNCER_EXTRA_KWARGS`` into each
         synchronizer in ``SYNCERS`` and update the list accordingly. Every override
         surface lands in this merge, so it is also where a constrained threshold is
-        checked against the type its syncer field declares. Merging again on the same
-        instance leaves ``SYNCERS`` as it was.
+        checked against the type its syncer field declares. Merging again with the
+        same ``SYNCER_EXTRA_KWARGS`` leaves ``SYNCERS`` as it was.
 
         :return: The updated ``ExtensionsSettings`` instance with modified ``SYNCERS``.
         :raises ValueError: When a merged threshold carries an unusable value.
