@@ -68,7 +68,11 @@ from app.extensions.sync.exceptions import (
     SyncFailError,
     SyncItemAlreadyInProgressError,
 )
-from app.extensions.sync.fields import StaleRunAfter
+from app.extensions.sync.fields import (
+    StaleRunAfter,
+    TaskExecutionTimeout,
+    TasksExecutionWaitInterval,
+)
 from app.extensions.sync.health import SyncHealthReporter
 from app.tasks.models import TaskHistoryStatusEnum, TaskLogType
 
@@ -1456,33 +1460,27 @@ class TaskRunResult(NamedTuple):
 class BaseTaskSyncer(BaseSyncer):
     """Provide a base class for task-based synchronizers in the PMM Extensions application.
 
-    This class extends `BaseSyncer` by adding task management capabilities through the
+    This class extends ``BaseSyncer`` by adding task management capabilities through the
     Tasks API, allowing synchronization processes to execute tasks and handle their
     outputs.
 
     :param tasks_api: The remote API interface for managing synchronization tasks.
-    :type tasks_api: RemoteAPI
-    :param task_execution_timeout: The maximum time (in seconds) to wait for a task to
-        complete. Defaults to 300 (5 minutes).
-    :type task_execution_timeout: int
-    :param tasks_execution_wait_interval: The interval (in seconds) between task status
-        checks. Defaults to 5.
-    :type tasks_execution_wait_interval: int
+    :param task_execution_timeout: The positive maximum time (in seconds) to wait for a
+        task to complete. Defaults to ``300`` (5 minutes).
+    :param tasks_execution_wait_interval: The positive interval (in seconds) between
+        task status checks. Defaults to ``5``.
     :param force_executor_host: The host to force for task execution, if any.
-    :type force_executor_host: str | None
     :param strict_executor_matching: Raise ``ExecutorHostNotFoundError`` instead of
         falling back to an arbitrary host when no executor matches the node.
         Defaults to ``False``.
-    :type strict_executor_matching: bool
     :param default_executor_host: The Nomad client host to use when no matching host
         is found for a service (e.g. RDS instances). If set, takes precedence over
         the first available host in the fallback path.
-    :type default_executor_host: str | None
     """
 
     tasks_api: RemoteAPI
-    task_execution_timeout: int = 300
-    tasks_execution_wait_interval: int = 5
+    task_execution_timeout: TaskExecutionTimeout = 300
+    tasks_execution_wait_interval: TasksExecutionWaitInterval = 5
     force_executor_host: str | None = None
     strict_executor_matching: bool = False
 
