@@ -188,9 +188,9 @@ apps.
 New code usually means new tests. Make sure new features and bug fixes include corresponding tests.
 [PMM Extensions v0.1.0-alpha](https://github.com/percona/pmm-extensions/releases/tag/v0.1.0-alpha) has a test coverage of over 50%, and our goal is to continually increase this percentage.
 
-Tests are located in the [tests/](https://github.com/percona/pmm-extensions/tree/main/app/tests) directory and mirror the structure of the [app/](https://github.com/percona/pmm-extensions/tree/main/app/) directory. For example:
-- For [app/models.py](https://github.com/percona/pmm-extensions/blob/main/app/models.py), the tests are in [tests/test_models.py](https://github.com/percona/pmm-extensions/blob/main/app/tests/test_models.py).
-- For [app/api/routes/oauth.py](https://github.com/percona/pmm-extensions/blob/main/app/api/routes/oauth.py), the tests are in [tests/api/routes/test_oauth.py](https://github.com/percona/pmm-extensions/blob/main/app/tests/api/routes/test_oauth.py).
+Tests are located in the [tests/app/](https://github.com/percona/pmm-extensions/tree/main/tests/app) directory and mirror the structure of the [app/](https://github.com/percona/pmm-extensions/tree/main/app/) directory. For example:
+- For [app/core/models.py](https://github.com/percona/pmm-extensions/blob/main/app/core/models.py), the tests are in [tests/app/core/test_models.py](https://github.com/percona/pmm-extensions/blob/main/tests/app/core/test_models.py).
+- For [app/api/routes/oauth.py](https://github.com/percona/pmm-extensions/blob/main/app/api/routes/oauth.py), the tests are in [tests/app/api/routes/test_oauth.py](https://github.com/percona/pmm-extensions/blob/main/tests/app/api/routes/test_oauth.py).
 
 As you can see, test filenames are prefixed with a `test_`.
 
