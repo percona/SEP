@@ -69,7 +69,7 @@ def _sqlite_text(value: datetime | None) -> str | None:
     """Render a timestamp the way SQLite stores ``DateTime`` columns.
 
     :param value: The timestamp to render.
-    :return: Its stored text, or None for None.
+    :return: Its stored text, or ``None`` for ``None``.
     """
     return value.strftime("%Y-%m-%d %H:%M:%S.%f") if value else None
 
@@ -91,8 +91,8 @@ def _seed_node(
     """Insert a ``node`` row carrying the given sync-health state.
 
     :param conn: The SQLite connection to insert with.
-    :param last_synced_at: The row's last success, or None.
-    :param sync_failing_since: The row's failing-run start, or None.
+    :param last_synced_at: The row's last success, or ``None``.
+    :param sync_failing_since: The row's failing-run start, or ``None``.
     :return: The new row's id.
     """
     conn.exec_driver_sql(
@@ -108,7 +108,7 @@ def _newest_attempt_at(conn: Connection, table_name: str, entity_id: int) -> str
     :param conn: The SQLite connection to read with.
     :param table_name: The table holding the row.
     :param entity_id: The row's id.
-    :return: The stored text, or None when unset.
+    :return: The stored text, or ``None`` when unset.
     """
     return conn.exec_driver_sql(
         f'SELECT newest_attempt_at FROM "{table_name}" WHERE id = ?', (entity_id,)

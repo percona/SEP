@@ -59,7 +59,7 @@ def recreate_database(url: URL, name: str, *, create: bool = True) -> None:
 
     :param url: The ``asyncpg`` URL of any database on the same server.
     :param name: The database to recreate.
-    :param create: Whether to create it again; False only drops it.
+    :param create: Whether to create it again; ``False`` only drops it.
     """
 
     async def _run() -> None:
