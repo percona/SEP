@@ -217,6 +217,24 @@ class ConstraintUniqueManager(BaseSQLModelManager):
     Model = ConstraintUniqueModel
 
 
+class ExcludedOnlyUniqueModel(BaseSQLModel, table=True):
+    """Model a unique key whose every column is serialization-excluded.
+
+    Covers the edge case where filtering ``exclude=True`` columns would otherwise
+    leave the conflict message with an empty key list.
+    """
+
+    __tablename__ = "test_excluded_only_unique"
+
+    secret: str = SQLField(unique=True, index=True, exclude=True)
+
+
+class ExcludedOnlyUniqueManager(BaseSQLModelManager):
+    """Manage the all-excluded unique-key test model."""
+
+    Model = ExcludedOnlyUniqueModel
+
+
 @pytest_asyncio.fixture(name="session_engine")
 async def session_engine_fixture() -> AsyncGenerator[AsyncEngine, None]:
     """Create the schema-loaded engine every CRUD session in this module shares.
@@ -1265,6 +1283,29 @@ class TestSaveUniqueViolation:
             await CompositeUniqueManager.save(session, row)
 
         assert "discriminator" not in str(raised.value)
+
+    @pytest.mark.asyncio
+    async def test_all_excluded_key_collision_still_names_the_model(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert an all-excluded unique key never renders an empty column list."""
+        await ExcludedOnlyUniqueManager.save(
+            session, ExcludedOnlyUniqueModel(secret="claimed")
+        )
+        row = await ExcludedOnlyUniqueManager.save(
+            session, ExcludedOnlyUniqueModel(secret="free")
+        )
+        row.secret = "claimed"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match=r"^ExcludedOnlyUniqueModel already exists\.$",
+        ) as raised:
+            await ExcludedOnlyUniqueManager.save(session, row)
+
+        assert "secret" not in str(raised.value)
+        assert "with the same" not in str(raised.value)
 
     @pytest.mark.asyncio
     async def test_index_collision_on_falsy_key_member_raises_conflict(
