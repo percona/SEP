@@ -2,8 +2,8 @@
 
 Compose topology pairing the PMM feature build (PMM Extensions frontend, PostgreSQL
 exposure, secret provisioning and the native `/extensions` proxy,
-[Percona-Lab/pmm-submodules#4500] = percona/pmm branch
-`PMM-15569-extensions-rename`, [percona/pmm#5992], on top of the exposure from
+[Percona-Lab/pmm-submodules#4500] = percona/pmm `main` at
+`7a20dfff5`, where [percona/pmm#5992] merged, on top of the exposure from
 [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted PMM Extensions side-car:
 supervisord running the three APIs + Celery worker/beat + bundled Valkey,
 shipping only the `inventory`, `mysql_backups` and `atw` apps. The snippets
@@ -80,7 +80,7 @@ whose Nomad `raw_exec` driver reports healthy.
 **Your own PMM server is a different matter, and the preview cannot use one.**
 Everything PMM Extensions relies on — the `PMM_ENABLE_EXTENSIONS` switch, the `/extensions` proxy, the
 PostgreSQL role, the secrets channel, the session exchange, the frontend — is
-still on percona/pmm's feature branch and in no released PMM. Point the
+on percona/pmm `main` at `7a20dfff5` but in no released PMM yet. Point the
 side-car at an existing PMM 3.x and none of it is there.
 
 Everything below this line is the developer reference for the harness itself.
