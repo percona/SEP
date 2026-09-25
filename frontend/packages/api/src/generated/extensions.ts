@@ -2362,8 +2362,8 @@ export interface paths {
      *
      *     Served here rather than pointing the caller at ``/api/extensions/admin/settings``
      *     because that router is admin-gated and PMM's principal is not an admin: the
-     *     ``--sep-token`` bearer resolves to the synthetic ``extensions-service`` user, built
-     *     with ``is_admin=False`` deliberately, since it is a deployment-level shared
+     *     bearer of the pmm-managed ``--extensions-token`` flag resolves to the synthetic
+     *     ``extensions-service`` user, built with ``is_admin=False`` deliberately, since it is a deployment-level shared
      *     secret with no person behind it. An app-owned endpoint keeps a schedule change
      *     scoped to this app instead of requiring PMM Extensions wide administrative access.
      *
@@ -2402,8 +2402,8 @@ export interface paths {
      *     settings refresher rather than through this request.
      *
      *     ``ENABLED`` is what PMM's OpenManager switch calls, via this same route with
-     *     its ``--sep-token`` credential (see ``require_minimum_role``'s service-principal
-     *     bypass): it flips independently of ``SCHEDULE``, so the configured cadence
+     *     the credential of the pmm-managed ``--extensions-token`` flag (see
+     *     ``require_minimum_role``'s service-principal bypass): it flips independently of ``SCHEDULE``, so the configured cadence
      *     survives OpenManager being turned off and back on rather than being
      *     overwritten each time.
      *
