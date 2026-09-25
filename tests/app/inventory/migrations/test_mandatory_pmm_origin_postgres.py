@@ -33,6 +33,7 @@ from alembic import command
 from sqlalchemy import text
 
 from tests.app.inventory.legacy_origin import PRE_RENAME_LEGACY_PREFIX
+from tests.app.inventory.migrations.conftest import SEED_TIMESTAMPS
 from tests.app.inventory.migrations.postgres_support import run_on_postgres
 
 # The head immediately before the PMM origin becomes mandatory.
@@ -43,8 +44,6 @@ _MANDATORY_COLUMNS = (
     ("node", "source"),
     ("service", "external_id"),
 )
-
-_SEED_TIMESTAMPS = "'2026-01-01 00:00:00+00', '2026-01-01 00:00:00+00'"
 
 _NULLABILITY = (
     "SELECT is_nullable FROM information_schema.columns "
@@ -59,7 +58,7 @@ async def _insert_node(conn, address, name, external_id, source):
     result = await conn.execute(
         text(
             "INSERT INTO node (created_at, updated_at, address, name, external_id, "
-            f"source, type, retirement_key) VALUES ({_SEED_TIMESTAMPS}, :address, "
+            f"source, type, retirement_key) VALUES ({SEED_TIMESTAMPS}, :address, "
             ":name, :external_id, CAST(:source AS sourceenum), 'generic', -1) "
             "RETURNING id"
         ),
@@ -78,7 +77,7 @@ async def _insert_service(conn, external_id, name, port, node_id):
     result = await conn.execute(
         text(
             "INSERT INTO service (created_at, updated_at, external_id, name, type, "
-            f"port, node_id, retirement_key) VALUES ({_SEED_TIMESTAMPS}, "
+            f"port, node_id, retirement_key) VALUES ({SEED_TIMESTAMPS}, "
             ":external_id, :name, 'MYSQL', :port, :node_id, -1) RETURNING id"
         ),
         {
@@ -171,7 +170,7 @@ def test_cascade_under_real_foreign_keys(inventory_postgres_config):
             await conn.execute(
                 text(
                     "INSERT INTO schema (created_at, updated_at, name, service_id, "
-                    f"retirement_key) VALUES ({_SEED_TIMESTAMPS}, 'sch', "
+                    f"retirement_key) VALUES ({SEED_TIMESTAMPS}, 'sch', "
                     ":service_id, -1) RETURNING id"
                 ),
                 {"service_id": service_id},
@@ -181,7 +180,7 @@ def test_cascade_under_real_foreign_keys(inventory_postgres_config):
             await conn.execute(
                 text(
                     'INSERT INTO "table" (created_at, updated_at, name, "create", '
-                    f"keys, schema_id, retirement_key) VALUES ({_SEED_TIMESTAMPS}, "
+                    f"keys, schema_id, retirement_key) VALUES ({SEED_TIMESTAMPS}, "
                     "'tbl', 'CREATE TABLE t (id INT)', '{}', :schema_id, -1) "
                     "RETURNING id"
                 ),

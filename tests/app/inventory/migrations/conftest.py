@@ -28,7 +28,18 @@ from app.core.utils.fields import AsyncDatabaseEngine
 from app.inventory.config import inventory_settings
 from tests.app.alembic_paths import ALEMBIC_INI
 from tests.app.conftest import postgres_dsn_or_skip, postgres_worker_schema
-from tests.app.inventory.migrations.postgres_support import recreate_database
+from tests.app.inventory.migrations.postgres_support import (
+    recreate_database,
+)
+
+#: The ``created_at`` / ``updated_at`` pair every real-PostgreSQL seed needs,
+#: spelled with the offset ``timestamptz`` requires.
+SEED_TIMESTAMPS = "'2026-01-01 00:00:00+00', '2026-01-01 00:00:00+00'"
+
+#: The head immediately before the at-least-one-fact CHECK lands. The SQLite and
+#: real-PostgreSQL halves of that revision's coverage must upgrade from the same
+#: point for their seeded rows to mean the same thing.
+HOST_OBSERVATION_PRE_CONSTRAINT_REVISION = "b351dd0aaed8"
 
 
 @pytest.fixture
