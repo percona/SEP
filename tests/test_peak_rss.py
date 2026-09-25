@@ -32,6 +32,14 @@ from tests.peak_rss import (
 )
 
 
+@pytest.fixture
+def report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    """Point the report variable at a fresh file and return its path."""
+    path = tmp_path / "rss.jsonl"
+    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(path))
+    return path
+
+
 def _read_lines(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
@@ -41,13 +49,8 @@ def _fix_ru_maxrss(monkeypatch: pytest.MonkeyPatch, value: int) -> None:
     monkeypatch.setattr(resource, "getrusage", lambda _who: usage)
 
 
-def test_writes_one_line_when_env_set(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_writes_one_line_when_env_set(report: Path) -> None:
     """Record the process as the controller when it is not an xdist worker."""
-    report = tmp_path / "rss.jsonl"
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
-
     record_peak_rss(SimpleNamespace())
 
     [line] = _read_lines(report)
@@ -56,24 +59,16 @@ def test_writes_one_line_when_env_set(
     assert line["peak_rss_mib"] > 0
 
 
-def test_worker_id_is_recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_worker_id_is_recorded(report: Path) -> None:
     """Record an xdist worker under its worker id."""
-    report = tmp_path / "rss.jsonl"
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
-
     record_peak_rss(SimpleNamespace(workerinput={"workerid": "gw3"}))
 
     [line] = _read_lines(report)
     assert line["worker"] == "gw3"
 
 
-def test_appends_across_processes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_appends_across_processes(report: Path) -> None:
     """Keep every process's line when several write to the same file."""
-    report = tmp_path / "rss.jsonl"
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
-
     record_peak_rss(SimpleNamespace(workerinput={"workerid": "gw0"}))
     record_peak_rss(SimpleNamespace(workerinput={"workerid": "gw1"}))
 
@@ -100,14 +95,12 @@ def test_noop_when_env_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 )
 def test_platform_units(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    report: Path,
     platform: str,
     ru_maxrss: int,
     expected_mib: int,
 ) -> None:
     """Normalise ``ru_maxrss`` from KiB on Linux and from bytes on macOS."""
-    report = tmp_path / "rss.jsonl"
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
     monkeypatch.setattr(sys, "platform", platform)
     _fix_ru_maxrss(monkeypatch, ru_maxrss)
 
@@ -117,11 +110,8 @@ def test_platform_units(
     assert line["peak_rss_mib"] == expected_mib
 
 
-def test_median_summary_excludes_controller(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_median_summary_excludes_controller(report: Path) -> None:
     """Print every process's peak and the median over the workers alone."""
-    report = tmp_path / "rss.jsonl"
     report.write_text(
         "".join(
             json.dumps({"worker": worker, "peak_rss_mib": peak}) + "\n"
@@ -135,7 +125,6 @@ def test_median_summary_excludes_controller(
         ),
         encoding="utf-8",
     )
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
 
     summary = peak_rss_summary()
 
@@ -144,18 +133,13 @@ def test_median_summary_excludes_controller(
     assert "gw3: 900 MiB" in summary
 
 
-def test_nested_session_under_n0_counts_the_process_once(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_nested_session_under_n0_counts_the_process_once(report: Path) -> None:
     """Report one ``controller`` line when a ``-n 0`` run nests ``pytest.main``.
 
     Without xdist, a test's in-process ``pytest.main`` session and the outer
     session both record as ``controller`` from the summarising process's own
     pid, so only the last line for that pid may count.
     """
-    report = tmp_path / "rss.jsonl"
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
-
     record_peak_rss(SimpleNamespace())
     record_peak_rss(SimpleNamespace())
 
@@ -163,16 +147,13 @@ def test_nested_session_under_n0_counts_the_process_once(
     assert [line.split(":")[0] for line in summary[:-1]] == [CONTROLLER]
 
 
-def test_controller_lines_from_other_processes_are_dropped(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_controller_lines_from_other_processes_are_dropped(report: Path) -> None:
     """Drop a ``controller`` line a test's pytest subprocess wrote.
 
     A subprocess inherits the report variable, and ``ru_maxrss`` survives
     ``execve``, so its line repeats the spawning worker's peak under a pid that
     is not the summarising controller's.
     """
-    report = tmp_path / "rss.jsonl"
     foreign_pid = os.getpid() + 1
     report.write_text(
         json.dumps({"worker": CONTROLLER, "pid": foreign_pid, "peak_rss_mib": 645})
@@ -181,7 +162,6 @@ def test_controller_lines_from_other_processes_are_dropped(
         + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
 
     assert peak_rss_summary() == [
         "gw0: 655 MiB",
@@ -189,16 +169,12 @@ def test_controller_lines_from_other_processes_are_dropped(
     ]
 
 
-def test_summary_without_workers_reports_no_median(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_summary_without_workers_reports_no_median(report: Path) -> None:
     """Report the single process of a ``-n 0`` run without inventing a median."""
-    report = tmp_path / "rss.jsonl"
     report.write_text(
         json.dumps({"worker": CONTROLLER, "peak_rss_mib": 800}) + "\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
 
     assert peak_rss_summary() == [
         f"{CONTROLLER}: 800 MiB",
