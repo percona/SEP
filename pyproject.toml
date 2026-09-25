@@ -262,8 +262,6 @@ include = [
 ]
 [tool.ty.overrides.rules]
 unresolved-attribute = "ignore"
-[tool.ty.overrides.rules]
-unresolved-attribute = "ignore"
 
 [[tool.ty.overrides]]
 # `Celery` installs `loop` and the other attributes read here at runtime, so the
@@ -276,8 +274,6 @@ include = [
     "app/extensions/settings_override.py",
     "tests/app/extensions/test_app_drain.py",
 ]
-[tool.ty.overrides.rules]
-unresolved-attribute = "ignore"
 [tool.ty.overrides.rules]
 unresolved-attribute = "ignore"
 
@@ -396,8 +392,6 @@ include = [
 ]
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
-[tool.ty.overrides.rules]
-unresolved-import = "ignore"
 
 [[tool.ty.overrides]]
 # `pygments.lexers` re-exports its lexers lazily through `__getattr__`, so the
@@ -406,8 +400,6 @@ include = [
     "app/extensions/utils/jinja.py",
     "tests/app/extensions/utils/test_jinja.py",
 ]
-[tool.ty.overrides.rules]
-unresolved-import = "ignore"
 [tool.ty.overrides.rules]
 unresolved-import = "ignore"
 
