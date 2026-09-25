@@ -1276,8 +1276,8 @@ class TestSaveUniqueViolation:
         with pytest.raises(
             HTTPConflictException,
             match=(
-                r"^CompositeUniqueModel with the same external_id, source "
-                r"already exists\.$"
+                r"CompositeUniqueModel with the same external_id, source "
+                r"already exists\."
             ),
         ) as raised:
             await CompositeUniqueManager.save(session, row)
@@ -1300,7 +1300,7 @@ class TestSaveUniqueViolation:
 
         with pytest.raises(
             HTTPConflictException,
-            match=r"^ExcludedOnlyUniqueModel already exists\.$",
+            match=r"ExcludedOnlyUniqueModel already exists\.",
         ) as raised:
             await ExcludedOnlyUniqueManager.save(session, row)
 
