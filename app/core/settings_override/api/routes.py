@@ -1451,7 +1451,7 @@ async def _stage_and_commit_overrides(
         keep.value = stored_value
         keep.is_active = True
         keep.updated_at = stamp
-        keep.updated_by = actor
+        keep.stamp(actor)
         session.add(keep)
     await session.commit()
     return provenance
