@@ -1452,10 +1452,11 @@ async def apply_class_overrides(
     because an app that owns its settings class (:class:`AppOwnedClassEntry`)
     may also need to serve its *own* narrower ``/config`` endpoint: the shared
     settings router is admin-gated, and not every caller of an app's
-    configuration is a PMM Extensions admin (e.g. PMM's ``--sep-token`` principal). A
-    second implementation of "validate the batch, write it atomically,
-    republish the snapshot, rebind" is exactly the kind of duplicate that
-    drifts into two different validation rules.
+    configuration is a PMM Extensions admin (e.g. the principal behind the
+    pmm-managed ``--extensions-token`` flag). A second implementation of
+    "validate the batch, write it atomically, republish the snapshot, rebind"
+    is exactly the kind of duplicate that drifts into two different validation
+    rules.
 
     Phase A validates every key — existence on the class, HOT classification,
     type and constraint coercion — and rejects the whole batch on any failure,
