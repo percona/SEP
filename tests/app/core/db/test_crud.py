@@ -1282,7 +1282,7 @@ class TestSaveUniqueViolation:
         ) as raised:
             await CompositeUniqueManager.save(session, row)
 
-        assert "discriminator" not in str(raised.value)
+        assert "discriminator" not in raised.value.detail
 
     @pytest.mark.asyncio
     async def test_all_excluded_key_collision_still_names_the_model(
@@ -1304,8 +1304,9 @@ class TestSaveUniqueViolation:
         ) as raised:
             await ExcludedOnlyUniqueManager.save(session, row)
 
-        assert "secret" not in str(raised.value)
-        assert "with the same" not in str(raised.value)
+        assert raised.value.detail == "ExcludedOnlyUniqueModel already exists."
+        assert "secret" not in raised.value.detail
+        assert "with the same" not in raised.value.detail
 
     @pytest.mark.asyncio
     async def test_index_collision_on_falsy_key_member_raises_conflict(
@@ -1325,9 +1326,14 @@ class TestSaveUniqueViolation:
 
         with pytest.raises(
             HTTPConflictException,
-            match="CompositeUniqueModel with the same external_id, source",
-        ):
+            match=(
+                r"CompositeUniqueModel with the same external_id, source "
+                r"already exists\."
+            ),
+        ) as raised:
             await CompositeUniqueManager.save(session, row)
+
+        assert "discriminator" not in raised.value.detail
 
     @pytest.mark.asyncio
     async def test_constraint_update_collision_raises_conflict(
