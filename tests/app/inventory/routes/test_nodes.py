@@ -28,6 +28,7 @@ from app.inventory.models import (
     Node,
     Schema,
     Service,
+    ServiceTypeEnum,
     SourceEnum,
     SyncOutcomeEnum,
     Table,
@@ -600,15 +601,112 @@ class TestListServicesByNode:
         assert data["offset"] == 0
         assert data["limit"] == DEFAULT_PAGINATION_LIMIT
 
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": False}], ids=["omitted", "false"]
+    )
     def test_list_services_by_node_excludes_retired(
-        self, test_client: TestClient, retired_service: Service
+        self,
+        test_client: TestClient,
+        retired_service: Service,
+        params: dict[str, bool],
     ) -> None:
         """Omit a retired service from an active node's services."""
-        response = test_client.get(f"/nodes/{retired_service.node_id}/services/")
+        response = test_client.get(
+            f"/nodes/{retired_service.node_id}/services/", params=params
+        )
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
         assert data["items"] == []
         assert data["total"] == 0
+
+    def test_list_services_by_node_include_retired_resolves_retired_node(
+        self, test_client: TestClient, service: Service, retired_node: Node
+    ) -> None:
+        """List a retired node's services through the opt-in."""
+        response = test_client.get(
+            f"/nodes/{retired_node.id}/services/", params={"include_retired": True}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert [item["id"] for item in data["items"]] == [service.id]
+        assert data["total"] == 1
+
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": False}], ids=["omitted", "false"]
+    )
+    def test_list_services_by_node_hides_retired_node_by_default(
+        self,
+        test_client: TestClient,
+        service: Service,
+        retired_node: Node,
+        params: dict[str, bool],
+    ) -> None:
+        """Return 404 for a retired node unless the opt-in is set."""
+        response = test_client.get(f"/nodes/{retired_node.id}/services/", params=params)
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_list_services_by_node_include_retired_after_retire_route(
+        self, test_client: TestClient, node: Node, service: Service
+    ) -> None:
+        """List the services the retire route cascaded into, marked retired."""
+        assert (
+            test_client.delete(f"/nodes/{node.id}").status_code
+            == status.HTTP_204_NO_CONTENT
+        )
+
+        hidden = test_client.get(f"/nodes/{node.id}/services/")
+        assert hidden.status_code == status.HTTP_404_NOT_FOUND
+
+        response = test_client.get(
+            f"/nodes/{node.id}/services/", params={"include_retired": True}
+        )
+        assert response.status_code == status.HTTP_200_OK
+        items = response.json()["items"]
+        assert [item["id"] for item in items] == [service.id]
+        assert items[0]["retired_at"] is not None
+
+    @pytest.mark.parametrize("same_type", [True, False], ids=["matching", "other"])
+    def test_list_services_by_node_include_retired_keeps_type_filter(
+        self,
+        test_client: TestClient,
+        service: Service,
+        retired_node: Node,
+        *,
+        same_type: bool,
+    ) -> None:
+        """Apply the service_type filter to a retired node's services."""
+        service_type = (
+            service.type
+            if same_type
+            else next(t for t in ServiceTypeEnum if t != service.type)
+        )
+        response = test_client.get(
+            f"/nodes/{retired_node.id}/services/",
+            params={"include_retired": True, "service_type": service_type.value},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        expected = [service.id] if same_type else []
+        assert [item["id"] for item in response.json()["items"]] == expected
+
+    def test_list_services_by_node_include_retired_on_active_node(
+        self, test_client: TestClient, retired_service: Service
+    ) -> None:
+        """Include a retired service of an active node through the opt-in."""
+        response = test_client.get(
+            f"/nodes/{retired_service.node_id}/services/",
+            params={"include_retired": True},
+        )
+        assert response.status_code == status.HTTP_200_OK
+        assert [item["id"] for item in response.json()["items"]] == [retired_service.id]
+
+    def test_list_services_by_node_rejects_invalid_include_retired(
+        self, test_client: TestClient, node: Node
+    ) -> None:
+        """Reject a non-boolean include_retired with HTTP 422."""
+        response = test_client.get(
+            f"/nodes/{node.id}/services/", params={"include_retired": "maybe"}
+        )
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def test_list_services_by_node_rejects_unknown_sort_key(
         self, test_client: TestClient, node: Node
@@ -645,9 +743,14 @@ class TestListServicesByNode:
         assert len(data["items"]) == 1
         assert data["items"][0]["id"] == service.id
 
-    def test_list_services_by_node_not_found(self, test_client: TestClient) -> None:
-        """Return 404 for a nonexistent node ID."""
-        response = test_client.get("/nodes/99999/services/")
+    @pytest.mark.parametrize(
+        "params", [{}, {"include_retired": True}], ids=["active", "include_retired"]
+    )
+    def test_list_services_by_node_not_found(
+        self, test_client: TestClient, params: dict[str, bool]
+    ) -> None:
+        """Return 404 for a nonexistent node ID in either retirement scope."""
+        response = test_client.get("/nodes/99999/services/", params=params)
         assert response.status_code == status.HTTP_404_NOT_FOUND
 
     def test_list_services_by_node_custom_offset(
@@ -927,6 +1030,18 @@ class TestCreateServiceForNode:
         payload = ServiceWriteFactory.build()
         response = test_client.post(
             "/nodes/99999/services/",
+            json=payload.model_dump(mode="json"),
+        )
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_create_service_for_retired_node_ignores_include_retired(
+        self, test_client: TestClient, retired_node: Node
+    ) -> None:
+        """Refuse a service under a retired node, whatever the read opt-in says."""
+        payload = ServiceWriteFactory.build()
+        response = test_client.post(
+            f"/nodes/{retired_node.id}/services/",
+            params={"include_retired": True},
             json=payload.model_dump(mode="json"),
         )
         assert response.status_code == status.HTTP_404_NOT_FOUND
