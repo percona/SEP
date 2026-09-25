@@ -130,7 +130,7 @@ class CasdoorSDK(CredentialHeaderMixin, RemoteAPI):
         return "Basic"
 
     @property
-    def _credential_value(self) -> str | None:
+    def _credential_value(self) -> str:
         """Return the Base64-encoded client credentials for Basic auth.
 
         Encodes ``client_id`` and ``client_secret`` as

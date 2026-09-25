@@ -236,6 +236,8 @@ class PMMRemoteAPI(StoredCredentialHeaderMixin, RemoteAPI):
     :param ssl_certfile: Path to the SSL certificate file. Defaults to None.
     :param logger_name: Name to use for the logger. Defaults to `__name__`.
     :param api_key: The API key for authentication.
+    :param auth_scheme: Scheme the ``Authorization`` header announces ahead of
+        ``api_key``. Defaults to ``"Bearer"``.
     :param error_detail_key: The key to expect errors details to be. Defaults to
         "message".
     :param error_code_key: The key to expect error codes to be, or None if no error
