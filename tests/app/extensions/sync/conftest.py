@@ -20,6 +20,7 @@ from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest_asyncio
+from pydantic import UUID4
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel
@@ -79,7 +80,7 @@ def local_nodes_payload(*created_nodes: CreatedNode) -> dict[str, Any]:
 
 
 async def close_run(
-    session: AsyncSession, sync_instance_id: int, *, snapshot_complete: bool | None
+    session: AsyncSession, sync_instance_id: UUID4, *, snapshot_complete: bool | None
 ) -> None:
     """Close a run the way ``BaseSyncer.__aexit__`` does, keeping the session open.
 

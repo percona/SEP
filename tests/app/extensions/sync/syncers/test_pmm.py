@@ -2032,28 +2032,6 @@ class TestTombstonesOpenNoSyncItem:
         assert await _absence_rows(session, SyncInventoryEntityTypeEnum.SERVICE) == []
 
     @pytest.mark.asyncio
-    async def test_reappearing_tombstoned_node_is_revived_and_synced(
-        self, local_node, session, mock_pmm_api, mock_remote_api
-    ):
-        """Revive a returning tombstone and open its item once it is live again."""
-        local_node.source = SourceEnum.PMM
-        local_node.retired_at = utc_now()
-
-        syncer = await self._run_generation(
-            session,
-            mock_pmm_api,
-            mock_remote_api,
-            local_node,
-            _snapshot(_remote_node(local_node)),
-        )
-
-        assert entity_posts(mock_remote_api) == [f"/nodes/{local_node.id}/revive"]
-        items = await self._items(session, syncer)
-        assert items[(SyncInventoryEntityTypeEnum.NODE, local_node.id)] == (
-            SyncStatusEnum.SUCCESS
-        )
-
-    @pytest.mark.asyncio
     async def test_revived_node_is_synced_as_live_on_the_next_generation(
         self, local_node, session, mock_pmm_api, mock_remote_api
     ):

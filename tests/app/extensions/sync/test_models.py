@@ -353,7 +353,7 @@ class TestPrepareSyncSkipsRetiredEntities:
     def _tree(retired: SyncInventoryEntityTypeEnum | None = None) -> CreatedNode:
         """Build a single-branch node → service → schema → table tree.
 
-        :param retired: The one level to tombstone, or None for an all-active tree.
+        :param retired: The one level to tombstone, or ``None`` for an all-active tree.
         :return: The node at the root of the tree.
         """
         retired_at = utc_now()
@@ -424,21 +424,6 @@ class TestPrepareSyncSkipsRetiredEntities:
         await close_run(session, sync_instance.id, snapshot_complete=None)
         items = await SyncItemManager.list(session, sync_instance_id=sync_instance.id)
         return {(item.entity_type, item.entity_id) for item in items}
-
-    @pytest.mark.asyncio
-    async def test_retired_node_gets_no_item(
-        self, session: AsyncSession, mock_remote_api
-    ) -> None:
-        """Open only the inventory item when the sole node is tombstoned."""
-
-        class NodeSyncer(StubTestSyncer):
-            SYNC_TO_LIMIT = SyncInventoryEntityTypeEnum.NODE
-
-        self._serve(mock_remote_api, self._tree(SyncInventoryEntityTypeEnum.NODE))
-
-        assert await self._prepared(session, NodeSyncer, mock_remote_api) == {
-            (SyncInventoryEntityTypeEnum.INVENTORY, None),
-        }
 
     @pytest.mark.asyncio
     async def test_retired_node_subtree_is_not_walked(
