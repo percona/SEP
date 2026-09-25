@@ -552,7 +552,6 @@ def bounded_int_from_empty_str_factory(ge: int, le: int | None = None) -> Any:
 RelativeFilePathField = Annotated[
     FilePath,
     BeforeValidator(resolve_relative_path),
-    Field(validate_default=True),
 ]
 """Define a file path that resolves relative paths.
 
@@ -563,7 +562,6 @@ relative paths based on the application's directory structure.
 RelativeDirectoryPathField = Annotated[
     DirectoryPath,
     BeforeValidator(resolve_relative_path),
-    Field(validate_default=True),
 ]
 """Define a directory path that resolves relative paths.
 
@@ -574,7 +572,6 @@ relative paths based on the application's directory structure.
 RelativePathField = Annotated[
     Path,
     BeforeValidator(resolve_relative_path),
-    Field(validate_default=True),
 ]
 """Define a path that resolves relative paths.
 

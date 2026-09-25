@@ -470,7 +470,7 @@ def annotated_type(field_info: FieldInfo) -> Any:
     ``field_info.annotation`` alone is a bare type carrying none of the markers
     that decide how a leaf is stored. A field typed
     :data:`~app.core.utils.fields.CredentialHttpUrl` presents as a bare
-    :class:`pydantic_core.Url`, and a classifier reading ``.annotation``
+    :class:`~pydantic.HttpUrl`, and a classifier reading ``.annotation``
     silently misses it. A second re-assembly there would drift from this one.
 
     :param field_info: The Pydantic field metadata for the target attribute.
