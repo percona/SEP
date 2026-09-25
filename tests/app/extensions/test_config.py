@@ -469,9 +469,27 @@ class TestPluginModuleNameResolution:
     def test_sibling_backup_module_resolves(
         self, sibling_value: str, expected_module: str
     ):
-        """Sibling plugins whose names begin with ``backup`` resolve unchanged."""
+        """Resolve a sibling ``backup``-prefixed plugin without remapping it."""
         plugin = App(name="Backups", module_name=sibling_value)
         assert plugin.module_name == expected_module
+
+
+class TestAppsModuleExistenceAtLoad:
+    """Cover the ``APPS`` module-existence probe at full-settings construction."""
+
+    def test_missing_module_rejects_full_settings(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reject a missing app package even when its registration is disabled."""
+        monkeypatch.setenv(
+            "EXTENSIONS__APPS",
+            '[{"MODULE_NAME": "_scaffold_missing_package", "ENABLED": false}]',
+        )
+        with pytest.raises(
+            ValidationError,
+            match=r"No module named app\.extensions\.apps\._scaffold_missing_package",
+        ):
+            ExtensionsSettings()
 
 
 class TestPluginNameOptional:
