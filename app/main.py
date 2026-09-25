@@ -153,7 +153,6 @@ def _get_merged_openapi() -> dict[str, Any]:
     web app is not merged in, so the unified document replaces it with its own.
 
     :return: The merged OpenAPI 3.x JSON document.
-    :rtype: dict[str, Any]
     """
     merged = merge_openapi_documents(app.openapi(), extensions_app.openapi())
     merged["info"]["description"] = _MERGED_OPENAPI_DESCRIPTION
