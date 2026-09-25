@@ -65,7 +65,7 @@
 | app/core/settings\_override/constants.py                                                                                            |        5 |        0 |        0 |        0 |    100% |           |
 | app/core/settings\_override/lifecycle.py                                                                                            |      123 |        1 |       34 |        1 |     99% |70-\>exit, 536 |
 | app/core/settings\_override/manager.py                                                                                              |        5 |        0 |        0 |        0 |    100% |           |
-| app/core/settings\_override/models.py                                                                                               |       48 |        2 |        8 |        2 |     93% |  121, 123 |
+| app/core/settings\_override/models.py                                                                                               |       69 |        1 |       12 |        2 |     96% |142, 237-\>exit |
 | app/core/settings\_override/policy.py                                                                                               |       29 |        0 |        6 |        0 |    100% |           |
 | app/core/settings\_override/proxy.py                                                                                                |       21 |        0 |        2 |        0 |    100% |           |
 | app/core/settings\_override/registry.py                                                                                             |      312 |        2 |      122 |        2 |     99% |1201, 1244 |
@@ -533,7 +533,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33562** | **1917** | **8106** |  **676** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33583** | **1916** | **8110** |  **676** | **93%** |           |
 
 
 ## Setup coverage badge
