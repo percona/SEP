@@ -33,7 +33,7 @@ from tests.peak_rss import (
 
 
 def _read_lines(path: Path) -> list[dict[str, object]]:
-    return [json.loads(line) for line in path.read_text().splitlines()]
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
 
 
 def _fix_ru_maxrss(monkeypatch: pytest.MonkeyPatch, value: int) -> None:
@@ -52,8 +52,8 @@ def test_writes_one_line_when_env_set(
 
     [line] = _read_lines(report)
     assert line["worker"] == CONTROLLER
-    assert isinstance(line["peak_rss_mb"], int)
-    assert line["peak_rss_mb"] > 0
+    assert isinstance(line["peak_rss_mib"], int)
+    assert line["peak_rss_mib"] > 0
 
 
 def test_worker_id_is_recorded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -92,7 +92,7 @@ def test_noop_when_env_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(
-    ("platform", "ru_maxrss", "expected_mb"),
+    ("platform", "ru_maxrss", "expected_mib"),
     [
         ("linux", 3 * 1024 * 1024, 3072),
         ("darwin", 3 * 1024 * 1024, 3),
@@ -103,7 +103,7 @@ def test_platform_units(
     tmp_path: Path,
     platform: str,
     ru_maxrss: int,
-    expected_mb: int,
+    expected_mib: int,
 ) -> None:
     """Normalise ``ru_maxrss`` from KiB on Linux and from bytes on macOS."""
     report = tmp_path / "rss.jsonl"
@@ -114,7 +114,7 @@ def test_platform_units(
     record_peak_rss(SimpleNamespace())
 
     [line] = _read_lines(report)
-    assert line["peak_rss_mb"] == expected_mb
+    assert line["peak_rss_mib"] == expected_mib
 
 
 def test_median_summary_excludes_controller(
@@ -124,7 +124,7 @@ def test_median_summary_excludes_controller(
     report = tmp_path / "rss.jsonl"
     report.write_text(
         "".join(
-            json.dumps({"worker": worker, "peak_rss_mb": peak}) + "\n"
+            json.dumps({"worker": worker, "peak_rss_mib": peak}) + "\n"
             for worker, peak in [
                 ("gw0", 600),
                 ("gw1", 700),
@@ -132,15 +132,16 @@ def test_median_summary_excludes_controller(
                 ("gw3", 900),
                 (CONTROLLER, 100),
             ]
-        )
+        ),
+        encoding="utf-8",
     )
     monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
 
     summary = peak_rss_summary()
 
-    assert summary[-1] == "median worker peak RSS: 675 MB over 4 worker(s)"
-    assert "controller: 100 MB" in summary
-    assert "gw3: 900 MB" in summary
+    assert summary[-1] == "median worker peak RSS: 675 MiB over 4 worker(s)"
+    assert "controller: 100 MiB" in summary
+    assert "gw3: 900 MiB" in summary
 
 
 def test_nested_session_under_n0_counts_the_process_once(
@@ -174,16 +175,17 @@ def test_controller_lines_from_other_processes_are_dropped(
     report = tmp_path / "rss.jsonl"
     foreign_pid = os.getpid() + 1
     report.write_text(
-        json.dumps({"worker": CONTROLLER, "pid": foreign_pid, "peak_rss_mb": 645})
+        json.dumps({"worker": CONTROLLER, "pid": foreign_pid, "peak_rss_mib": 645})
         + "\n"
-        + json.dumps({"worker": "gw0", "pid": foreign_pid + 1, "peak_rss_mb": 655})
-        + "\n"
+        + json.dumps({"worker": "gw0", "pid": foreign_pid + 1, "peak_rss_mib": 655})
+        + "\n",
+        encoding="utf-8",
     )
     monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
 
     assert peak_rss_summary() == [
-        "gw0: 655 MB",
-        "median worker peak RSS: 655 MB over 1 worker(s)",
+        "gw0: 655 MiB",
+        "median worker peak RSS: 655 MiB over 1 worker(s)",
     ]
 
 
@@ -192,10 +194,13 @@ def test_summary_without_workers_reports_no_median(
 ) -> None:
     """Report the single process of a ``-n 0`` run without inventing a median."""
     report = tmp_path / "rss.jsonl"
-    report.write_text(json.dumps({"worker": CONTROLLER, "peak_rss_mb": 800}) + "\n")
+    report.write_text(
+        json.dumps({"worker": CONTROLLER, "peak_rss_mib": 800}) + "\n",
+        encoding="utf-8",
+    )
     monkeypatch.setenv(PEAK_RSS_FILE_ENV, str(report))
 
     assert peak_rss_summary() == [
-        f"{CONTROLLER}: 800 MB",
+        f"{CONTROLLER}: 800 MiB",
         "median worker peak RSS: n/a (no xdist workers)",
     ]

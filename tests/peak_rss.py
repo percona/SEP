@@ -19,7 +19,7 @@ Setting ``PYTEST_PEAK_RSS_FILE`` to a file path makes every process of the run,
 each xdist worker and the controller, append one JSON line to that file when its
 session finishes::
 
-    {"worker": "gw0", "pid": 4242, "peak_rss_mb": 658}
+    {"worker": "gw0", "pid": 4242, "peak_rss_mib": 658}
 
 The controller then prints one line per process and the median over the
 workers, which is the figure to compare between runs. A test that runs
@@ -54,8 +54,8 @@ PEAK_RSS_FILE_ENV = "PYTEST_PEAK_RSS_FILE"
 CONTROLLER = "controller"
 
 
-def _peak_rss_mb() -> int:
-    """Return this process's peak resident set size in whole megabytes.
+def _peak_rss_mib() -> int:
+    """Return this process's peak resident set size in whole mebibytes (MiB).
 
     ``ru_maxrss`` is reported in KiB on Linux and in bytes on macOS.
     """
@@ -82,7 +82,7 @@ def record_peak_rss(config: Any) -> None:
     workerinput = getattr(config, "workerinput", None)
     worker = workerinput["workerid"] if workerinput else CONTROLLER
     line = json.dumps(
-        {"worker": worker, "pid": os.getpid(), "peak_rss_mb": _peak_rss_mb()}
+        {"worker": worker, "pid": os.getpid(), "peak_rss_mib": _peak_rss_mib()}
     )
     with path.open("a", encoding="utf-8") as report:
         report.write(line + "\n")
@@ -111,14 +111,14 @@ def peak_rss_summary() -> list[str]:
         by_process.pop(process, None)
         by_process[process] = record
     records = list(by_process.values())
-    lines = [f"{record['worker']}: {record['peak_rss_mb']} MB" for record in records]
+    lines = [f"{record['worker']}: {record['peak_rss_mib']} MiB" for record in records]
     worker_peaks = [
-        record["peak_rss_mb"] for record in records if record["worker"] != CONTROLLER
+        record["peak_rss_mib"] for record in records if record["worker"] != CONTROLLER
     ]
     if worker_peaks:
         median = round(statistics.median(worker_peaks))
         lines.append(
-            f"median worker peak RSS: {median} MB over {len(worker_peaks)} worker(s)"
+            f"median worker peak RSS: {median} MiB over {len(worker_peaks)} worker(s)"
         )
     else:
         lines.append("median worker peak RSS: n/a (no xdist workers)")
