@@ -15,7 +15,7 @@ maintainers = [
     {name = "Yan Orestes", email = "yan.orestes@percona.com"},
 ]
 readme = "README.md"
-repository = "https://github.com/percona/SEP"
+repository = "https://github.com/percona/pmm-extensions"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Framework :: FastAPI",

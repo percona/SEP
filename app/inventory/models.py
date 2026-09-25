@@ -27,7 +27,16 @@ from pydantic import (
     NonNegativeInt,
     PositiveInt,
 )
-from sqlalchemy import Column, Index, JSON, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    column,
+    Index,
+    JSON,
+    or_,
+    Text,
+    text,
+)
 from sqlalchemy import Enum as EnumField
 from sqlmodel import Field as SQLField
 from sqlmodel import Relationship, SQLModel
@@ -1012,11 +1021,11 @@ class HostSystemObservationBase(SQLModel):
     os_version: str | None = None
     installed_packages: list[ArbitraryMapping] | None = SQLField(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON(none_as_null=True)),
     )
     config: ArbitraryMapping | None = SQLField(
         default=None,
-        sa_column=Column(JSON),
+        sa_column=Column(JSON(none_as_null=True)),
     )
     can_elevate: bool | None = None
     observed_at: UTCDatetime = SQLField(sa_type=DateTimeWithTimezone)
@@ -1047,6 +1056,39 @@ HOST_OBSERVATION_FIELD_NAMES = frozenset(HostSystemObservationBase.model_fields)
     "observed_at",
 }
 
+#: Name of the CHECK enforcing the host observation's minimum content, shared with
+#: the revision that creates it so a downgrade can drop it by name.
+HOST_OBSERVATION_MIN_CONTENT_CONSTRAINT = "ck_hostsystemobservation_at_least_one_fact"
+
+
+def host_observation_min_content_check() -> CheckConstraint:
+    """Build the table-level guard mirroring the at-least-one-fact validator.
+
+    The columns come from :data:`HOST_OBSERVATION_FIELD_NAMES`, so this
+    declaration and the Pydantic validator stay in lockstep as fields are added.
+    A migrated database does not: the revision that creates the CHECK spells its
+    columns out, so a new fact column reaches an existing deployment only
+    through a revision of its own. Sorting makes the rendered expression
+    deterministic across interpreter runs, which a frozenset's iteration order
+    is not.
+
+    A plain ``IS NOT NULL`` disjunction covers the JSON-typed facts only because
+    they are declared ``JSON(none_as_null=True)``. SQLAlchemy's default persists
+    an unset JSON value as the JSON text ``null``, which is not SQL NULL and so
+    would satisfy this CHECK on a row carrying no fact at all.
+
+    :return: A CHECK requiring at least one observed fact to be non-NULL.
+    """
+    return CheckConstraint(
+        or_(
+            *(
+                column(name).is_not(None)
+                for name in sorted(HOST_OBSERVATION_FIELD_NAMES)
+            )
+        ),
+        name=HOST_OBSERVATION_MIN_CONTENT_CONSTRAINT,
+    )
+
 
 class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True):
     """Store host-level system facts for a node (one snapshot per node).
@@ -1065,6 +1107,8 @@ class HostSystemObservation(BaseSQLModel, HostSystemObservationBase, table=True)
         node, if observed.
     :param observed_at: When this observation was collected.
     """
+
+    __table_args__ = (host_observation_min_content_check(),)
 
 
 class HostSystemObservationWrite(HostSystemObservationBase):
