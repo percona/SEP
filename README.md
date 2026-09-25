@@ -381,9 +381,9 @@
 | app/extensions/snippets/utils.py                                                                                                    |       32 |        0 |       10 |        0 |    100% |           |
 | app/extensions/sync/constants.py                                                                                                    |        4 |        0 |        0 |        0 |    100% |           |
 | app/extensions/sync/exceptions.py                                                                                                   |       32 |        0 |        0 |        0 |    100% |           |
-| app/extensions/sync/fields.py                                                                                                       |       11 |        0 |        0 |        0 |    100% |           |
+| app/extensions/sync/fields.py                                                                                                       |       15 |        0 |        0 |        0 |    100% |           |
 | app/extensions/sync/health.py                                                                                                       |       53 |        0 |        8 |        0 |    100% |           |
-| app/extensions/sync/models.py                                                                                                       |      408 |       34 |      104 |       18 |     88% |116-\>118, 119-127, 139-\>141, 143, 162, 168-\>170, 171-\>173, 256-\>273, 391-\>389, 480-481, 869-\>exit, 887, 901, 1008, 1022, 1081-\>exit, 1132, 1145, 1169-1171, 1204-\>exit, 1249, 1262, 1319-\>exit, 1364, 1508-1510, 1620-1622, 1627-1633, 1637 |
+| app/extensions/sync/models.py                                                                                                       |      408 |       38 |      104 |       16 |     87% |122-131, 145-147, 166, 172-\>174, 175-\>177, 260-\>277, 395-\>393, 484-485, 873-\>exit, 891, 905, 1012, 1026, 1048-1049, 1085-\>exit, 1136, 1149, 1173-1175, 1208-\>exit, 1253, 1323-\>exit, 1368, 1506-1508, 1618-1620, 1625-1631, 1635 |
 | app/extensions/sync/syncers/mysql/payload.py                                                                                        |      176 |       47 |       54 |        5 |     70% |158-\>166, 242-246, 251-256, 269-275, 279-302, 356-\>372, 375, 396-404, 423 |
 | app/extensions/sync/syncers/mysql/syncer.py                                                                                         |      241 |        2 |       94 |        5 |     98% |111, 604-\>605, 716, 819-\>823, 821-\>820 |
 | app/extensions/sync/syncers/pmm.py                                                                                                  |      133 |        1 |       34 |        4 |     97% |107, 140-\>141, 430-\>437, 480-\>485 |
@@ -531,7 +531,7 @@
 | app/tasks/run\_result.py                                                                                                            |       59 |        0 |       14 |        0 |    100% |           |
 | app/tasks/settings/routes.py                                                                                                        |       13 |        0 |        0 |        0 |    100% |           |
 | app/tasks/task\_status.py                                                                                                           |       22 |        0 |        0 |        0 |    100% |           |
-| **TOTAL**                                                                                                                           | **33499** | **1912** | **8108** |  **676** | **93%** |           |
+| **TOTAL**                                                                                                                           | **33503** | **1916** | **8108** |  **674** | **93%** |           |
 
 
 ## Setup coverage badge
