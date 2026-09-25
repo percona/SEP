@@ -2,8 +2,8 @@
 
 Compose topology pairing the PMM feature build (PMM Extensions frontend, PostgreSQL
 exposure, secret provisioning and the native `/extensions` proxy,
-[Percona-Lab/pmm-submodules#4500] = percona/pmm branch
-`PMM-15569-extensions-rename`, [percona/pmm#5992], on top of the exposure from
+[Percona-Lab/pmm-submodules#4500] = percona/pmm `main` at
+`7a20dfff5`, where [percona/pmm#5992] merged, on top of the exposure from
 [percona/pmm#5653] + [percona/pmm#5700]) with the app-restricted PMM Extensions side-car:
 supervisord running the three APIs + Celery worker/beat + bundled Valkey,
 shipping only the `inventory`, `mysql_backups` and `atw` apps. The snippets
