@@ -67,7 +67,7 @@
             <a id="nextFileLink" class="nav" href="z_25204f8a7406668b_resolution_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 23:00 +0000
+            created at 2026-09-26 00:16 +0000
         </p>
         <aside class="hidden">
             <button type="button" class="button_next_chunk" data-shortcut="j"></button>
@@ -554,7 +554,7 @@
     <p class="pln"><span class="n"><a id="t470" href="#t470">470</a></span><span class="t"><span class="str">    ``field_info.annotation`` alone is a bare type carrying none of the markers</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t471" href="#t471">471</a></span><span class="t"><span class="str">    that decide how a leaf is stored. A field typed</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t472" href="#t472">472</a></span><span class="t"><span class="str">    :data:`~app.core.utils.fields.CredentialHttpUrl` presents as a bare</span>&nbsp;</span><span class="r"></span></p>
-    <p class="pln"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t"><span class="str">    :class:`pydantic_core.Url`, and a classifier reading ``.annotation``</span>&nbsp;</span><span class="r"></span></p>
+    <p class="pln"><span class="n"><a id="t473" href="#t473">473</a></span><span class="t"><span class="str">    :class:`~pydantic.HttpUrl`, and a classifier reading ``.annotation``</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t474" href="#t474">474</a></span><span class="t"><span class="str">    silently misses it. A second re-assembly there would drift from this one.</span>&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t475" href="#t475">475</a></span><span class="t">&nbsp;</span><span class="r"></span></p>
     <p class="pln"><span class="n"><a id="t476" href="#t476">476</a></span><span class="t"><span class="str">    :param field_info: The Pydantic field metadata for the target attribute.</span>&nbsp;</span><span class="r"></span></p>
@@ -1266,7 +1266,7 @@
     <p class="pln"><span class="n"><a id="t1182" href="#t1182">1182</a></span><span class="t"><span class="str">    &quot;&quot;&quot;</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1183" href="#t1183">1183</a></span><span class="t">    <span class="key">if</span> <span class="nam">isinstance</span><span class="op">(</span><span class="nam">item</span><span class="op">,</span> <span class="nam">BaseModel</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1184" href="#t1184">1184</a></span><span class="t">        <span class="nam">field_parts</span><span class="op">:</span> <span class="nam">list</span><span class="op">[</span><span class="nam">tuple</span><span class="op">[</span><span class="nam">str</span><span class="op">,</span> <span class="nam">str</span><span class="op">]</span><span class="op">]</span> <span class="op">=</span> <span class="op">[</span><span class="op">]</span>&nbsp;</span><span class="r"></span></p>
-    <p class="run"><span class="n"><a id="t1185" href="#t1185">1185</a></span><span class="t">        <span class="key">for</span> <span class="nam">name</span> <span class="key">in</span> <span class="nam">sorted</span><span class="op">(</span><span class="nam">item</span><span class="op">.</span><span class="nam">model_fields</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
+    <p class="run"><span class="n"><a id="t1185" href="#t1185">1185</a></span><span class="t">        <span class="key">for</span> <span class="nam">name</span> <span class="key">in</span> <span class="nam">sorted</span><span class="op">(</span><span class="nam">type</span><span class="op">(</span><span class="nam">item</span><span class="op">)</span><span class="op">.</span><span class="nam">model_fields</span><span class="op">)</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1186" href="#t1186">1186</a></span><span class="t">            <span class="nam">value</span> <span class="op">=</span> <span class="nam">getattr</span><span class="op">(</span><span class="nam">item</span><span class="op">,</span> <span class="nam">name</span><span class="op">,</span> <span class="key">None</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1187" href="#t1187">1187</a></span><span class="t">            <span class="nam">unwrapped</span> <span class="op">=</span> <span class="nam">_unwrap_secret_value</span><span class="op">(</span><span class="nam">value</span><span class="op">)</span>&nbsp;</span><span class="r"></span></p>
     <p class="run"><span class="n"><a id="t1188" href="#t1188">1188</a></span><span class="t">            <span class="key">if</span> <span class="nam">unwrapped</span> <span class="key">is</span> <span class="key">not</span> <span class="key">None</span><span class="op">:</span>&nbsp;</span><span class="r"></span></p>
@@ -1580,7 +1580,7 @@
             <a class="nav" href="z_25204f8a7406668b_resolution_py.html">&#xbb; next</a>
             &nbsp; &nbsp; &nbsp;
             <a class="nav" href="https://coverage.readthedocs.io/en/7.16.1">coverage.py v7.16.1</a>,
-            created at 2026-09-25 23:00 +0000
+            created at 2026-09-26 00:16 +0000
         </p>
     </div>
 </footer>
