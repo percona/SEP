@@ -1420,6 +1420,30 @@ def test_record_display_name_flags_reach_the_config(flavor: scaffold.Flavor) -> 
 
 
 @pytest.mark.parametrize("flavor", list(scaffold.Flavor))
+def test_singular_flag_alone_derives_the_plural(flavor: scaffold.Flavor) -> None:
+    """Pluralise a declared singular when ``--item-display-name-plural`` is omitted.
+
+    Before this, the plural fell back to ``display_name`` (``Demo``), so the
+    generated file never exercised schema-side derivation.
+    """
+    config = _config_from_args(
+        [
+            "--name",
+            "demo",
+            "--type",
+            flavor.value,
+            "--item-display-name",
+            "node",
+            "--no-input",
+        ]
+    )
+
+    assert config.item_display_name == "node"
+    assert config.item_display_name_plural == "nodes"
+    assert config.display_name == "Demo"
+
+
+@pytest.mark.parametrize("flavor", list(scaffold.Flavor))
 def test_record_display_names_rendered_into_every_declaration_site(
     tmp_settings: Path, flavor: scaffold.Flavor
 ) -> None:
