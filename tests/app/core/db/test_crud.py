@@ -157,7 +157,8 @@ class CompositeUniqueModel(BaseSQLModel, table=True):
     :param external_id: The identifier the origin system assigns.
     :param source: The origin system the row came from.
     :param discriminator: The extra column that narrows the index, standing in for
-        inventory's retirement key.
+        inventory's retirement key. Excluded from serialization the same way
+        ``retirement_key`` is.
     :param label: A value outside every unique index.
     """
 
@@ -174,7 +175,7 @@ class CompositeUniqueModel(BaseSQLModel, table=True):
 
     external_id: str
     source: str
-    discriminator: int = ACTIVE_DISCRIMINATOR
+    discriminator: int = SQLField(default=ACTIVE_DISCRIMINATOR, exclude=True)
     label: str = "default"
 
 
@@ -214,6 +215,24 @@ class ConstraintUniqueManager(BaseSQLModelManager):
     """Manage the constraint-unique test model."""
 
     Model = ConstraintUniqueModel
+
+
+class ExcludedOnlyUniqueModel(BaseSQLModel, table=True):
+    """Model a unique key whose every column is serialization-excluded.
+
+    Covers the edge case where filtering ``exclude=True`` columns would otherwise
+    leave the conflict message with an empty key list.
+    """
+
+    __tablename__ = "test_excluded_only_unique"
+
+    secret: str = SQLField(unique=True, index=True, exclude=True)
+
+
+class ExcludedOnlyUniqueManager(BaseSQLModelManager):
+    """Manage the all-excluded unique-key test model."""
+
+    Model = ExcludedOnlyUniqueModel
 
 
 @pytest_asyncio.fixture(name="session_engine")
@@ -1254,13 +1273,40 @@ class TestSaveUniqueViolation:
         )
         row.external_id = "ext-a"
 
-        # Leading columns only: what this pins is which index gets reported, not the
-        # exact tail of the wording.
         with pytest.raises(
             HTTPConflictException,
-            match="CompositeUniqueModel with the same external_id, source",
-        ):
+            match=(
+                r"CompositeUniqueModel with the same external_id, source "
+                r"already exists\."
+            ),
+        ) as raised:
             await CompositeUniqueManager.save(session, row)
+
+        assert "discriminator" not in raised.value.detail
+
+    @pytest.mark.asyncio
+    async def test_all_excluded_key_collision_still_names_the_model(
+        self,
+        session: AsyncSession,
+    ) -> None:
+        """Assert an all-excluded unique key never renders an empty column list."""
+        await ExcludedOnlyUniqueManager.save(
+            session, ExcludedOnlyUniqueModel(secret="claimed")
+        )
+        row = await ExcludedOnlyUniqueManager.save(
+            session, ExcludedOnlyUniqueModel(secret="free")
+        )
+        row.secret = "claimed"
+
+        with pytest.raises(
+            HTTPConflictException,
+            match=r"ExcludedOnlyUniqueModel already exists\.",
+        ) as raised:
+            await ExcludedOnlyUniqueManager.save(session, row)
+
+        assert raised.value.detail == "ExcludedOnlyUniqueModel already exists."
+        assert "secret" not in raised.value.detail
+        assert "with the same" not in raised.value.detail
 
     @pytest.mark.asyncio
     async def test_index_collision_on_falsy_key_member_raises_conflict(
@@ -1280,9 +1326,14 @@ class TestSaveUniqueViolation:
 
         with pytest.raises(
             HTTPConflictException,
-            match="CompositeUniqueModel with the same external_id, source",
-        ):
+            match=(
+                r"CompositeUniqueModel with the same external_id, source "
+                r"already exists\."
+            ),
+        ) as raised:
             await CompositeUniqueManager.save(session, row)
+
+        assert "discriminator" not in raised.value.detail
 
     @pytest.mark.asyncio
     async def test_constraint_update_collision_raises_conflict(
