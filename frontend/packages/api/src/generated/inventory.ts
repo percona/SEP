@@ -2402,7 +2402,6 @@ export interface components {
      *
      *     :cvar PMM: Represents the PMM data source.
      *     :vartype PMM: str
-     * @constant
      * @enum {string}
      */
     SourceEnum: 'pmm';

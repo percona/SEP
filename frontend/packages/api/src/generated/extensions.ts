@@ -5300,7 +5300,6 @@ export interface components {
      *
      *     :cvar PMM: Represents the PMM data source.
      *     :vartype PMM: str
-     * @constant
      * @enum {string}
      */
     SourceEnum: 'pmm';
@@ -5789,7 +5788,6 @@ export interface components {
       /**
        * Status
        * @constant
-       * @enum {string}
        */
       status: 'success';
     };
@@ -11008,7 +11006,9 @@ export interface components {
       /** Node Id */
       node_id: string;
       /** Observed */
-      observed?: Record<string, never>;
+      observed?: {
+        [key: string]: unknown;
+      };
       /** Services */
       services?: components['schemas']['om_inventory__ServiceResponse'][];
     };
@@ -11281,7 +11281,9 @@ export interface components {
       /** Node Id */
       node_id: string;
       /** Observed */
-      observed?: Record<string, never>;
+      observed?: {
+        [key: string]: unknown;
+      };
       /** Port */
       port?: number | null;
       /** Role */
