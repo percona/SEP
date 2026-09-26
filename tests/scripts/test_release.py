@@ -947,7 +947,7 @@ _NO_JENKINS_USER = {
 
 
 def test_trigger_jenkins_fails_naming_missing_credentials(tmp_path):
-    """A bare trigger without credentials exits non-zero instead of skipping."""
+    """Exit non-zero, instead of skipping, when a bare trigger lacks credentials."""
     result, curl_args = _run_make_with_fake_curl(
         tmp_path, "trigger-jenkins", "TAG=v0.13.0", credentials=_NO_JENKINS_USER
     )
@@ -959,7 +959,7 @@ def test_trigger_jenkins_fails_naming_missing_credentials(tmp_path):
 
 
 def test_trigger_jenkins_optional_warns_on_missing_credentials(tmp_path):
-    """``JENKINS_OPTIONAL=1`` skips the trigger with a WARNING, not silently."""
+    """Skip the trigger with a WARNING, not silently, under ``JENKINS_OPTIONAL=1``."""
     result, curl_args = _run_make_with_fake_curl(
         tmp_path,
         "trigger-jenkins",
@@ -989,7 +989,7 @@ def test_trigger_jenkins_optional_warns_on_missing_credentials(tmp_path):
 def test_trigger_jenkins_curl_failure(
     tmp_path, make_args, expected_exit, expected_message
 ):
-    """A failed trigger fails the target unless the caller opted out."""
+    """Fail the target on a failed trigger unless the caller opted out."""
     result, _ = _run_make_with_fake_curl(
         tmp_path, "trigger-jenkins", "TAG=v0.13.0", *make_args, curl_exit=22
     )
@@ -999,7 +999,7 @@ def test_trigger_jenkins_curl_failure(
 
 
 def test_lint_pipelines_fails_naming_missing_credentials(tmp_path):
-    """The Declarative lint exits non-zero instead of reporting a skip."""
+    """Exit non-zero instead of reporting a skipped Declarative lint."""
     result, curl_args = _run_make_with_fake_curl(
         tmp_path, "lint-pipelines", credentials={}
     )
