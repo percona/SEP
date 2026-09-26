@@ -46,7 +46,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery.models import IntervalSchedule
 from app.core.exceptions import HTTPBadRequestException
-from app.core.requests import BaseRemoteAPI
+from app.core.requests import BaseRemoteAPI, StoredCredentialHeaderMixin
 from app.core.settings_override.registry import (
     hot_field,
     InheritedMarkers,
@@ -619,7 +619,7 @@ class NomadAllocStatusEnum(StrEnum):
     UNKNOWN = "unknown"
 
 
-class NomadExecutor(BaseExecutor, BaseRemoteAPI):
+class NomadExecutor(StoredCredentialHeaderMixin, BaseExecutor, BaseRemoteAPI):
     """Represent a Nomad task executor.
 
     :param wait_interval: The interval in seconds between status checks.
@@ -734,33 +734,14 @@ class NomadExecutor(BaseExecutor, BaseRemoteAPI):
     def _configured_api_key(self) -> str | None:
         """Return the configured API key's plain value, or ``None`` when unset.
 
-        An empty secret counts as unset: :class:`~pydantic.SecretStr` defines
-        ``__len__``, so a blank value is falsy and would otherwise emit a bearer
-        header with no credential. Every site that branches on the credential
-        reads it here, so the two request paths cannot disagree about what
-        counts as configured.
+        Delegates to :attr:`~app.core.requests.remote_api.StoredCredentialHeaderMixin._credential_value`
+        so header emission, ``base_url`` stripping, and the sync ``backend`` session
+        all agree on what counts as configured. An empty secret counts as unset.
 
         :return: The plain API key when a non-empty one is configured, else
             ``None``.
         """
-        return self.api_key.get_secret_value() if self.api_key else None
-
-    @property
-    def headers(self) -> dict[str, str]:
-        """Return the headers to be used in Nomad requests.
-
-        Carries the configured API key as an ``Authorization`` header; without
-        one the inherited empty header set stands.
-
-        :return: A dictionary containing the headers for Nomad API requests.
-        """
-        api_key = self._configured_api_key
-        if api_key is None:
-            return super().headers
-        return {
-            **super().headers,
-            "Authorization": f"{self.auth_scheme} {api_key}",
-        }
+        return self._credential_value
 
     def _compute_base_url(self) -> str:
         """Compute the base URL, dropping userinfo once an API key is configured.
